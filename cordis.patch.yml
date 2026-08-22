@@ -1,0 +1,4 @@
+# SIDOR 工具箱（独立附属插件）：bundle 补丁（随 DSH 启动自动加载）
+- insert:
+    - id: sidor-box
+      name: sidor-box

@@ -1,0 +1,54 @@
+{
+  "name": "sidor-box",
+  "version": "1.0.0",
+  "description": "SIDOR 工具箱 —— DeepSeek Harness 独立附属插件：峰谷价格提示 / 任务完成通知 / 看门狗 / 审批提醒 / 防崩溃守护 / 插件与 DSH 版本检测。与主皮肤 sidor-ui 互相独立，官方插槽接入，可无冲突共存。",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "plugin",
+    "sidor",
+    "sidor-box",
+    "toolbox",
+    "ui",
+    "web"
+  ],
+  "homepage": "https://github.com/AKI2253/Sidor_box",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AKI2253/Sidor_box.git"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "preview",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "build:client": "powershell -ExecutionPolicy Bypass -File scripts/build-client.ps1"
+  },
+  "license": "MIT"
+}

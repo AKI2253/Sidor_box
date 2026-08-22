@@ -1,0 +1,2154 @@
+return {
+  inject: ['timer'],
+  apply(ctx) {
+    const slots = ctx.get('slots')
+    if (slots === undefined) return
+
+    /* ============ 工具箱图标 ============ */
+    const ICON_TOOLBOX =
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M5.5 5.4 V4.1 a2.5 2.5 0 0 1 5 0 V5.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '<rect x="2.6" y="5.4" width="10.8" height="7.9" rx="1.2" stroke="currentColor" stroke-width="1.3"/>' +
+      '<path d="M8 5.4 V13.3" stroke="currentColor" stroke-width="1.3"/>' +
+      '<rect x="7.05" y="6.4" width="1.9" height="2.2" rx="0.45" stroke="currentColor" stroke-width="1.3"/>' +
+      '</svg>'
+
+    /* ============ SIDOR 四芒星 ============ */
+    const STAR_14 = 'M7 0.8 8.6 5.4 13.2 7 8.6 8.6 7 13.2 5.4 8.6 0.8 7 5.4 5.4 Z'
+    const ICON_PRICE_STAR =
+      '<svg width="22" height="22" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
+      '<path d="' + STAR_14 + '" fill="currentColor"/>' +
+      '</svg>'
+
+    /* ============ 通知铃铛图标 ============ */
+    const ICON_NOTIFY =
+      '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M8 2.1a3.9 3.9 0 0 0-3.9 3.9c0 2.25-.72 3.3-1.22 4-.3.42.01 1 .54 1h9.16c.53 0 .84-.58.54-1-.5-.7-1.22-1.75-1.22-4A3.9 3.9 0 0 0 8 2.1Z" stroke="currentColor" stroke-width="1.3"/>' +
+      '<path d="M9.55 12.5a1.65 1.65 0 0 1-3.1 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '</svg>'
+
+    /* ============ 看门狗秒表图标 ============ */
+    const ICON_WATCH =
+      '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M6.3 1.7 H9.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '<path d="M8 1.7 V2.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '<circle cx="8" cy="9.3" r="5.1" stroke="currentColor" stroke-width="1.3"/>' +
+      '<path d="M8 6.7 V9.3 L10.2 10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>'
+
+    /* ============ 审批盾牌图标 ============ */
+    const ICON_APPROVAL =
+      '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M8 1.6 13.2 3.4 V7.6 C13.2 11 11 13.6 8 14.4 C5 13.6 2.8 11 2.8 7.6 V3.4 Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>' +
+      '<path d="M5.8 8.1 7.2 9.5 10.3 6.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>'
+
+    /* ============ 防崩溃守护图标（盾 + 循环箭头） ============ */
+    const ICON_GUARD =
+      '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M8 1.6 13.2 3.4 V7.6 C13.2 11 11 13.6 8 14.4 C5 13.6 2.8 11 2.8 7.6 V3.4 Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>' +
+      '<path d="M8 5.6 V10.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '<path d="M5.8 7.8 8 5.6 10.2 7.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>'
+
+    /* ============ 版本更新图标（循环箭头） ============ */
+    const ICON_UPD =
+      '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M13.15 5.6 A5.4 5.4 0 1 0 13.6 9.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '<path d="M13.4 2.7 V5.8 H10.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>'
+
+    /* ============ 官方 /api RPC ============ */
+    async function sidHostRpc(method, payload) {
+      const rpcId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : 'sid-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w) throw new Error('no window')
+      const res = await w.fetch('/api/' + method, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId: rpcId, method: method, payload: payload || {} }),
+      })
+      if (!res.ok) throw new Error('host ' + method + ' HTTP ' + res.status)
+      const json = await res.json()
+      if (!json || json.type !== 'server-response' || json.rpcId !== rpcId) throw new Error('host ' + method + ' 响应无效')
+      const result = json.result
+      if (!result || !result.ok) {
+        const err = result && result.error
+        const msg = err && typeof err.message === 'string' ? err.message : (err ? JSON.stringify(err) : '请求失败')
+        throw new Error(msg)
+      }
+      return result.value
+    }
+
+    /* ============ 通用超时包装（防止任何环节永久挂起） ============ */
+    function sidWithTimeout(promise, ms) {
+      return new Promise(function (resolve) {
+        let done = false
+        const fin = function (v) { if (!done) { done = true; resolve(v) } }
+        setTimeout(function () { fin(null) }, ms || 10000)
+        Promise.resolve(promise).then(fin, function () { fin(null) })
+      })
+    }
+
+    /* ============ 峰谷判定 ============ */
+    function sidPeakNow() {
+      let h = 0, m = 0, wd = -1
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false,
+          weekday: 'short',
+        }).formatToParts(new Date())
+        for (const p of parts) {
+          if (p.type === 'hour') h = parseInt(p.value, 10) % 24
+          else if (p.type === 'minute') m = parseInt(p.value, 10)
+          else if (p.type === 'weekday') {
+            // 北京时区星期：Mon=周一 … Sun=周日（0=Sun, 6=Sat）
+            wd = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(String(p.value).toLowerCase())
+          }
+        }
+      } catch (e) {
+        const d = new Date()
+        h = d.getHours()
+        m = d.getMinutes()
+        wd = d.getDay() // 0=周日, 6=周六
+      }
+      // 周末（周六/周日）全天不区分峰谷，统一按低谷价格 → 非高峰
+      if (wd === 0 || wd === 6) return false
+      const t = h * 60 + m
+      return (t >= 540 && t < 720) || (t >= 840 && t < 1080)
+    }
+
+    /* ============ 统一偏好持久化（所有功能开关 + 看门狗计时） ============ */
+    // 存 localStorage('sidor.box.prefs')，重启后恢复；与动态形态共用同源存储。
+    let sidPrefs = {}
+    try {
+      const raw = window.localStorage.getItem('sidor.box.prefs')
+      if (raw) {
+        const o = JSON.parse(raw)
+        if (o && typeof o === 'object') sidPrefs = o
+      }
+    } catch (e) { /* ignore */ }
+    function sidPrefsGet(key, fallback) {
+      return (sidPrefs && sidPrefs[key] !== undefined) ? sidPrefs[key] : fallback
+    }
+    function sidPrefsSave() {
+      try {
+        window.localStorage.setItem('sidor.box.prefs', JSON.stringify({
+          priceEnabled: sidPrice.enabled,
+          notifyEnabled: sidNotify.enabled,
+          approvalEnabled: sidApproval.enabled,
+          watchEnabled: sidWatch.enabled,
+          watchListenSec: sidWatch.listenSec,
+          watchKillSec: sidWatch.killSec,
+        }))
+      } catch (e) { /* ignore */ }
+    }
+
+    /* ============ 价格提示 store ============ */
+    // weekend：当前是否为北京时区周末（周六/周日）——周末全天按低谷计费
+    function sidIsWeekend() {
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', weekday: 'short' }).formatToParts(new Date())
+        for (const p of parts) {
+          if (p.type === 'weekday') {
+            const wd = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(String(p.value).toLowerCase())
+            return wd === 0 || wd === 6
+          }
+        }
+      } catch (e) { /* ignore */ }
+      const d = new Date()
+      const wd = d.getDay()
+      return wd === 0 || wd === 6
+    }
+    const sidPrice = { enabled: sidPrefsGet('priceEnabled', true), peak: sidPeakNow(), weekend: sidIsWeekend() }
+    const sidPriceListeners = new Set()
+    function sidPriceNotify() { for (const fn of Array.from(sidPriceListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidPriceSubscribe(fn) { sidPriceListeners.add(fn); return () => sidPriceListeners.delete(fn) }
+    function sidPriceToggle() { sidPrice.enabled = !sidPrice.enabled; sidPrefsSave(); sidPriceNotify() }
+
+    ctx.effect(() => {
+      const refresh = () => {
+        const p = sidPeakNow()
+        const wk = sidIsWeekend()
+        if (p !== sidPrice.peak || wk !== sidPrice.weekend) {
+          sidPrice.peak = p
+          sidPrice.weekend = wk
+          sidPriceNotify()
+        }
+      }
+      const iv = ctx.interval(refresh, 30000)
+      refresh()
+      return () => iv()
+    })
+
+    /* ============ 系统通知能力 ============ */
+    function sidNotifySupported() {
+      const w = typeof window !== 'undefined' ? window : null
+      return !!(w && w.Notification)
+    }
+    function sidNotifyPermissionNow() {
+      if (!sidNotifySupported()) return 'unsupported'
+      return window.Notification.permission || 'default'
+    }
+    function sidNotifyRequest() {
+      if (!sidNotifySupported()) return Promise.resolve('unsupported')
+      try {
+        return window.Notification.requestPermission().then((p) => {
+          sidNotify.permission = p
+          sidNotifyNotify()
+          return p
+        }).catch(() => {
+          sidNotify.permission = 'denied'
+          sidNotifyNotify()
+          return 'denied'
+        })
+      } catch (e) {
+        return Promise.resolve('denied')
+      }
+    }
+
+    /* ============ 任务完成提示 store + 界面 toast ============ */
+    const sidNotify = { enabled: sidPrefsGet('notifyEnabled', true), permission: sidNotifyPermissionNow() }
+    const sidNotifyListeners = new Set()
+    function sidNotifyNotify() { for (const fn of Array.from(sidNotifyListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidNotifySubscribe(fn) { sidNotifyListeners.add(fn); return () => sidNotifyListeners.delete(fn) }
+    function sidNotifyToggle() { sidNotify.enabled = !sidNotify.enabled; sidNotify.permission = sidNotifyPermissionNow(); sidPrefsSave(); sidNotifyNotify() }
+    function sidNotifyFire(title, body) {
+      sidNotify.permission = sidNotifyPermissionNow()
+      if (sidNotify.permission === 'granted') {
+        try {
+          const n = new window.Notification(title, { body: body, tag: 'sidor-agent-done' })
+          window.__sidLastNotification = n
+          return
+        } catch (e) { /* 落回 toast */ }
+      }
+      sidToastShow(body)
+    }
+
+    function sidNotifyTest() {
+      const out = {}
+      try {
+        out.notificationType = typeof window.Notification
+        out.permission = window.Notification ? (window.Notification.permission || 'unknown') : 'n/a'
+        if (typeof window.Notification === 'function') {
+          try {
+            const n = new window.Notification('SIDOR 通知测试', { body: '通知链路正常。', tag: 'sidor-test' })
+            window.__sidLastNotification = n
+            out.result = '系统通知已创建'
+          } catch (e) {
+            out.result = '创建失败: ' + (e && e.message ? e.message : String(e))
+          }
+        } else {
+          out.result = 'Notification 不可用（typeof=' + out.notificationType + '）'
+        }
+      } catch (e) {
+        out.result = '访问异常: ' + (e && e.message ? e.message : String(e))
+      }
+      return out
+    }
+
+    const sidToast = { text: '', seq: 0 }
+    const sidToastListeners = new Set()
+    function sidToastNotify() { for (const fn of Array.from(sidToastListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidToastSubscribe(fn) { sidToastListeners.add(fn); return () => sidToastListeners.delete(fn) }
+    function sidToastShow(text) { sidToast.text = text; sidToast.seq++; sidToastNotify() }
+    function sidToastClear() { if (sidToast.text === '') return; sidToast.text = ''; sidToast.seq++; sidToastNotify() }
+
+    /* ============ 审批通知 store ============ */
+    const sidApproval = { enabled: sidPrefsGet('approvalEnabled', true), red: false, domPresent: false, hostCalls: 0, pendingAt: 0 }
+    const sidApprovalListeners = new Set()
+    function sidApprovalNotify() { for (const fn of Array.from(sidApprovalListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidApprovalSubscribe(fn) { sidApprovalListeners.add(fn); return () => sidApprovalListeners.delete(fn) }
+    function sidApprovalToggle() { sidApproval.enabled = !sidApproval.enabled; sidPrefsSave(); sidApprovalNotify() }
+
+    function sidActiveSessionTitle() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return null
+      try {
+        const sels = [
+          '[class*="sessionHeader"] [class*="title"]',
+          '[class*="headerTitle"]',
+          '[class*="sessionTitle"]',
+        ]
+        for (const s of sels) {
+          const el = w.document.querySelector(s)
+          if (el instanceof w.HTMLElement) {
+            const t = (el.textContent || '').trim()
+            if (t) return t
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return null
+    }
+
+    let sidApprovalDomSeen = new Set()
+    function sidApprovalDomScan() {
+      const w = typeof window !== 'undefined' ? window : null
+      const out = { present: false, events: [] }
+      if (!w || !w.document) return out
+      try {
+        const allowRe = /允许|批准|同意|放行|allow|approve|permit|grant/i
+        const denyRe = /拒绝|驳回|deny|reject/i
+        const root = w.document.querySelector('[data-phase="conversation"]') || w.document
+        const cards = new Map()
+        const btns = root.querySelectorAll('button')
+        for (const b of Array.from(btns)) {
+          if (!(b instanceof w.HTMLElement)) continue
+          const t = (b.textContent || '').trim()
+          if (!t) continue
+          const card = (b.closest && b.closest('[class*="node"], [class*="card"], [class*="approval"], [role="dialog"]')) || b
+          let rec = cards.get(card)
+          if (!rec) {
+            rec = { allow: false, deny: false, text: (card.textContent || '').trim().slice(0, 120) }
+            cards.set(card, rec)
+          }
+          if (allowRe.test(t)) rec.allow = true
+          if (denyRe.test(t)) rec.deny = true
+        }
+        for (const rec of cards.values()) {
+          if (rec.allow && rec.deny) {
+            out.present = true
+            const fp = 'a@' + rec.text
+            if (!sidApprovalDomSeen.has(fp)) {
+              sidApprovalDomSeen.add(fp)
+              out.events.push({ reason: '审批请求（界面检测）', sessionId: null })
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return out
+    }
+
+    function sidApprovalFire(ev) {
+      const conv = sidActiveSessionTitle() || '当前对话'
+      const body = '对话「' + conv + '」需要你的审批：' + (ev && ev.reason ? ev.reason : '审批请求') + '。'
+      sidApproval.red = true
+      sidApproval.pendingAt = Date.now()
+      sidApprovalNotify()
+      sidNotify.permission = sidNotifyPermissionNow()
+      if (sidNotify.permission === 'granted') {
+        try {
+          const n = new window.Notification('SIDOR 审批提醒', { body: body, tag: 'sidor-approval', requireInteraction: true })
+          window.__sidLastNotification = n
+          return
+        } catch (e) { /* 落回 toast */ }
+      }
+      sidToastShow('审批提醒：' + body)
+    }
+
+    let sidApprovalTicking = false
+    const sidApprovalTick = async () => {
+      if (sidApprovalTicking) return
+      sidApprovalTicking = true
+      try {
+        if (!sidApproval.enabled) return
+        const scan = sidApprovalDomScan()
+        sidApproval.domPresent = scan.present
+        try {
+          const res = await host.call('sidor/approval-poll', {})
+          if (res) {
+            if (typeof res.listenerCalls === 'number') sidApproval.hostCalls = res.listenerCalls
+            if (Array.isArray(res.items)) {
+              for (const it of res.items) sidApprovalFire(it)
+            }
+          }
+        } catch (e) { /* host 通道不可用（静态形态） */ }
+        for (const ev of scan.events) sidApprovalFire(ev)
+        const now = Date.now()
+        const wasRed = sidApproval.red
+        sidApproval.red = scan.present || (wasRed && now - sidApproval.pendingAt < 10000)
+        if (sidApproval.domPresent || sidApproval.hostCalls !== 0 || sidApproval.red !== wasRed) {
+          sidApprovalNotify()
+        }
+      } finally {
+        sidApprovalTicking = false
+      }
+    }
+    ctx.effect(() => {
+      const iv = ctx.interval(sidApprovalTick, 1000)
+      sidApprovalTick()
+      return () => iv()
+    })
+
+    /* ============ 看门狗 store ============ */
+    const WATCH_PROBE_SEC = 10
+    const sidWatch = {
+      enabled: sidPrefsGet('watchEnabled', true),
+      listenSec: sidPrefsGet('watchListenSec', 0),
+      killSec: sidPrefsGet('watchKillSec', 0),
+      phase: 'idle', red: false, countdownStart: 0, elapsed: 0,
+    }
+    const sidWatchListeners = new Set()
+    function sidWatchNotify() { for (const fn of Array.from(sidWatchListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidWatchSubscribe(fn) { sidWatchListeners.add(fn); return () => sidWatchListeners.delete(fn) }
+    function sidWatchToggle() { sidWatch.enabled = !sidWatch.enabled; sidPrefsSave(); sidWatchNotify() }
+    function sidWatchSetListen(v) {
+      const n = parseInt(v, 10)
+      if (Number.isFinite(n) && n >= 0) { sidWatch.listenSec = n; sidPrefsSave(); sidWatchNotify() }
+    }
+    function sidWatchSetKill(v) {
+      const n = parseInt(v, 10)
+      if (Number.isFinite(n) && n >= 0) { sidWatch.killSec = n; sidPrefsSave(); sidWatchNotify() }
+    }
+    function sidWatchReset() {
+      if (sidWatch.phase !== 'idle' || sidWatch.red || sidWatch.elapsed !== 0) {
+        sidWatch.phase = 'idle'
+        sidWatch.red = false
+        sidWatch.elapsed = 0
+        sidWatchNotify()
+      }
+    }
+    function sidWatchKillText() {
+      return sidWatch.killSec > 0 ? (sidWatch.killSec + ' 秒') : '立即'
+    }
+    function sidWatchStatusText() {
+      if (sidWatch.phase === 'warned') {
+        return '任务已卡住并已提醒（浏览器通知），' + sidWatchKillText() + '后自动掐断并要求自检'
+      }
+      if (sidWatch.phase === 'stuck') {
+        return '检测到任务卡住（无进展 ' + WATCH_PROBE_SEC + ' 秒），' + sidWatch.listenSec + ' 秒后发出浏览器提醒'
+      }
+      if (sidWatch.phase === 'killed') {
+        return '已掐断卡住任务，等待 agent 自检…'
+      }
+      return '监听中：任务正常，无倒计时'
+    }
+
+    let sidClientActivityAt = Date.now()
+    let sidHostActivityAt = 0
+    let sidActiveSessionId = null
+    let sidWatchInputRunning = null
+    function sidInputRunningSignal(input) {
+      if (!input || typeof input !== 'object') return null
+      try {
+        if (typeof input.status === 'string') return input.status === 'running' || input.status === 'busy' || input.status === 'streaming' || input.status === 'pending'
+        if (typeof input.pending === 'boolean') return input.pending
+        if (typeof input.busy === 'boolean') return input.busy
+        if (typeof input.submitting === 'boolean') return input.submitting
+      } catch (e) { /* ignore */ }
+      return null
+    }
+
+    async function sidPromptAgent(text) {
+      if (!sidActiveSessionId) return
+      try {
+        await sidHostRpc('session.prompt', {
+          sessionId: sidActiveSessionId,
+          mode: 'queue',
+          content: [{ type: 'text', text: text }],
+        })
+      } catch (e) { /* 尽力而为 */ }
+    }
+
+    function sidKillTask() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return false
+      try {
+        const sels = [
+          '[data-composer-card] button[aria-label*="停止"], [data-composer-card] button[title*="停止"]',
+          '[data-composer-card] button[class*="stop"], [data-composer-card] button[class*="Stop"]',
+          '[data-composer-card] button[class*="interrupt"], [data-composer-card] button[class*="Interrupt"]',
+          'button[aria-label*="停止"]',
+        ]
+        for (const s of sels) {
+          const btn = w.document.querySelector(s)
+          if (btn instanceof w.HTMLElement) { btn.click(); return true }
+        }
+      } catch (e) { /* ignore */ }
+      return false
+    }
+
+    function sidWatchWarn() {
+      sidNotify.permission = sidNotifyPermissionNow()
+      const body = '检测到任务卡住：已无进展超过 ' + WATCH_PROBE_SEC + ' 秒。插件将在 ' + sidWatchKillText() + '后自动掐断并要求 Agent 自检。'
+      if (sidNotify.permission === 'granted') {
+        try {
+          const n = new window.Notification('SIDOR 任务异常提醒', { body: body, tag: 'sidor-watch-warn', requireInteraction: true })
+          window.__sidLastNotification = n
+          return
+        } catch (e) { /* 落回 toast */ }
+      }
+      sidToastShow('任务异常提醒：' + body)
+    }
+
+    function sidWatchKillNow() {
+      const killed = sidKillTask()
+      sidPromptAgent('【SIDOR 自动掐断】任务已卡住并被看门狗强制结束' + (killed ? '（已点击停止按钮）' : '（未找到停止按钮，已直接提示）') + '，请自检刚才卡住的原因并输出简要报告。')
+      sidWatch.phase = 'killed'
+      sidWatch.red = true
+      sidWatch.countdownStart = Date.now()
+      sidWatchNotify()
+      // killed 状态展示 4 秒后再复位，避免瞬时消失导致用户看不到「已掐断」；
+      // 若任务仍在跑，下一轮 tick 会从新的 countdownStart 重新判定。
+      ctx.timeout(function () {
+        if (sidWatch.phase === 'killed') {
+          sidWatch.phase = 'idle'
+          sidWatch.red = false
+          sidWatchNotify()
+        }
+      }, 4000)
+    }
+
+    let watchTicking = false
+    const watchTick = async () => {
+      if (watchTicking) return
+      watchTicking = true
+      try {
+        if (!sidWatch.enabled || sidWatch.listenSec <= 0) { sidWatchReset(); return }
+        let running = null
+        let hostActivity = 0
+        try {
+          const res = await host.call('sidor/watch-poll', {})
+          if (res && typeof res.running === 'boolean') {
+            running = res.running
+            hostActivity = typeof res.activity === 'number' ? res.activity : 0
+          }
+        } catch (e) { /* host 通道不可用（静态形态） */ }
+        if (running === null) running = sidWatchInputRunning
+        const now = Date.now()
+        if (!running) { sidWatchReset(); return }
+        sidHostActivityAt = Math.max(sidHostActivityAt, hostActivity)
+        const lastActivity = Math.max(sidClientActivityAt, sidHostActivityAt)
+        const silentFor = lastActivity > 0 ? (now - lastActivity) / 1000 : 0
+        if (silentFor < WATCH_PROBE_SEC) {
+          if (sidWatch.phase !== 'idle' || sidWatch.red) sidWatchReset()
+          return
+        }
+        if (sidWatch.phase === 'idle') {
+          sidWatch.phase = 'stuck'
+          sidWatch.red = false
+          sidWatch.countdownStart = now
+        }
+        sidWatch.elapsed = Math.floor((now - sidWatch.countdownStart) / 1000)
+        const listenSec = Math.max(1, sidWatch.listenSec)
+        const killSec = sidWatch.killSec
+        if (sidWatch.phase === 'stuck' && sidWatch.elapsed >= listenSec) {
+          sidWatch.phase = 'warned'
+          sidWatch.red = true
+          sidWatch.countdownStart = now
+          sidWatchWarn()
+          if (killSec <= 0) sidWatchKillNow()
+        } else if (sidWatch.phase === 'warned' && killSec > 0 && sidWatch.elapsed >= killSec) {
+          sidWatchKillNow()
+        }
+        sidWatchNotify()
+      } finally {
+        watchTicking = false
+      }
+    }
+    ctx.effect(() => {
+      const iv = ctx.interval(watchTick, 1000)
+      watchTick()
+      return () => iv()
+    })
+
+    /* ============ 防崩溃守护 store + 配置持久化 ============ */
+    function gIsAbsPath(p) {
+      return typeof p === 'string' && /^[A-Za-z]:[\\/]/.test(p)
+    }
+    let sidGuardCfg = { enabled: false, profilePath: '', archivePath: '', maxBackups: 5 }
+    try {
+      const raw = window.localStorage.getItem('sidor.box.guard')
+      if (raw) {
+        const o = JSON.parse(raw)
+        if (o && typeof o === 'object') sidGuardCfg = Object.assign(sidGuardCfg, o)
+      }
+      if (sidGuardCfg.profilePath && !gIsAbsPath(sidGuardCfg.profilePath)) sidGuardCfg.profilePath = ''
+      if (sidGuardCfg.archivePath && !gIsAbsPath(sidGuardCfg.archivePath)) sidGuardCfg.archivePath = ''
+    } catch (e) { /* ignore */ }
+    function sidGuardSave() {
+      try { window.localStorage.setItem('sidor.box.guard', JSON.stringify(sidGuardCfg)) } catch (e) { /* ignore */ }
+    }
+    const sidGuard = {
+      enabled: sidGuardCfg.enabled,
+      detected: '',
+      status: '未检测',
+      history: [],
+      busy: false,
+      lastBackup: '',
+      hostOk: false,
+      confirmOpen: false,
+    }
+    const sidGuardListeners = new Set()
+    function sidGuardNotify() { for (const fn of Array.from(sidGuardListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidGuardSubscribe(fn) { sidGuardListeners.add(fn); return () => sidGuardListeners.delete(fn) }
+
+    function sidGuardAgentPathHint() {
+      return sidGuardCfg.profilePath
+        ? 'DSH profile 路径：' + sidGuardCfg.profilePath
+        : 'DSH profile 路径未配置，请先自动检测：运行 cmd /c echo %DSH_HOME% 与 echo %USERPROFILE%，profile 取 %DSH_HOME%\\profiles\\web（无 DSH_HOME 则取 %USERPROFILE%\\.dsh\\profiles\\web）。'
+    }
+
+    // 按 profile 路径自动推导默认存档目录：<profiles 上级>\\.sidor-backup
+    // （如 C:\\Users\\81121\\.dsh\\profiles\\web → C:\\Users\\81121\\.dsh\\.sidor-backup）
+    function sidDeriveDefaultArchive() {
+      const p = sidGuardCfg.profilePath && sidGuardCfg.profilePath.trim()
+      if (!p || !gIsAbsPath(p)) return ''
+      const m = p.replace(/[\\/]+$/, '').match(/^(.*?)(?:profiles\\[^\\]+)$/i)
+      if (!m || !m[1]) return ''
+      return m[1].replace(/[\\/]+$/, '') + '\\.sidor-backup'
+    }
+
+    // 若 archivePath 未配置则回填自动推导值（返回是否已回填）
+    function sidGuardEnsureArchiveDefault() {
+      if (sidGuardCfg.archivePath && gIsAbsPath(sidGuardCfg.archivePath)) return false
+      const derived = sidDeriveDefaultArchive()
+      if (!derived) return false
+      sidGuardCfg.archivePath = derived
+      sidGuardSave()
+      sidGuardNotify()
+      return true
+    }
+
+    async function sidGuardCheck() {
+      try {
+        const res = await host.call('sidor/guard-check', { cfg: sidGuardCfg })
+        if (res) {
+          sidGuard.hostOk = true
+          if (typeof res.detected === 'string' && res.detected) sidGuard.detected = res.detected
+          sidGuard.status = res.status || '检测完成'
+          sidGuard.lastBackup = res.lastBackup || sidGuard.lastBackup
+          if ((!gIsAbsPath(sidGuardCfg.profilePath)) && res.detected) {
+            sidGuardCfg.profilePath = res.detected
+            sidGuardSave()
+            // 动态形态自动检测到路径后，同步推导并回填存档路径
+            sidGuardEnsureArchiveDefault()
+          }
+          if (!sidGuard.detected) {
+            sidGuard.status = '未能自动检测路径（浏览器无法读取系统环境变量；动态形态依赖 Host 子进程）。可手动填写，或静态形态下用 agent 代执行（agent 会自动检测路径）。'
+          }
+          sidGuardNotify()
+        }
+      } catch (e) {
+        sidGuard.hostOk = false
+        sidGuard.status = '静态形态：文件操作由 agent 代执行（agent 可自动检测路径）'
+        sidGuardNotify()
+      }
+    }
+
+    async function sidGuardBackup() {
+      if (sidGuard.busy) return
+      sidGuard.busy = true
+      sidGuardNotify()
+      try {
+        const res = await host.call('sidor/guard-backup', { cfg: sidGuardCfg })
+        if (res && res.ok) {
+          sidGuard.lastBackup = res.snapshot || ''
+          sidGuard.status = '已备份：' + (res.snapshot || '')
+          sidGuardSave()
+          await sidGuardHistory()
+          sidToastShow('防崩溃守护：备份完成（' + (res.snapshot || '') + '）')
+        } else {
+          sidGuard.status = '备份失败：' + ((res && res.error) || '未知')
+          sidToastShow('防崩溃守护：备份失败')
+        }
+      } catch (e) {
+        sidGuard.hostOk = false
+        sidGuard.status = '静态形态：无法直接备份'
+        sidPromptAgent('【SIDOR 防崩溃守护】请执行一次环境备份。' + sidGuardAgentPathHint() + ' 然后：将 profile 目录中的 cordis.patch.yml 与锁定文件（package-lock/pnpm-lock/yarn.lock）复制到存档文件夹 ' + (sidGuardCfg.archivePath || '<存档目录，可默认 .dsh 旁的 .sidor-backup>') + ' 下的新快照子目录（命名 snap-<时间戳>），并生成 restore.cmd 回退脚本；完成后汇报备份路径。')
+        sidToastShow('已向 agent 发送备份指令（静态形态）')
+      } finally {
+        sidGuard.busy = false
+        sidGuardNotify()
+      }
+    }
+
+    async function sidGuardHistory() {
+      try {
+        const res = await host.call('sidor/guard-history', { cfg: sidGuardCfg })
+        if (res && Array.isArray(res.items)) {
+          sidGuard.history = res.items
+          sidGuardNotify()
+        }
+      } catch (e) { /* 静态形态无历史 */ }
+    }
+
+    async function sidGuardRollback(backupId) {
+      if (sidGuard.busy) return
+      sidGuard.busy = true
+      sidGuardNotify()
+      try {
+        const res = await host.call('sidor/guard-rollback', { cfg: sidGuardCfg, backupId: backupId })
+        if (res && res.ok) {
+          sidGuard.status = '已回退到 ' + backupId
+          sidToastShow('防崩溃守护：已回退到 ' + backupId)
+        } else {
+          sidGuard.status = '回退失败：' + ((res && res.error) || '未知')
+          sidToastShow('防崩溃守护：回退失败')
+        }
+      } catch (e) {
+        sidGuard.hostOk = false
+        sidGuard.status = '静态形态：无法直接回退'
+        sidPromptAgent('【SIDOR 防崩溃守护】请执行回退。' + sidGuardAgentPathHint() + ' 然后：找到备份快照 ' + backupId + '（存档文件夹 ' + (sidGuardCfg.archivePath || '<存档目录>') + '），将其中 cordis.patch.yml 等配置文件复制回 profile 覆盖，必要时运行 restore.cmd；完成后汇报结果。')
+        sidToastShow('已向 agent 发送回退指令（静态形态）')
+      } finally {
+        sidGuard.busy = false
+        sidGuardNotify()
+      }
+    }
+
+    sidGuardCheck()
+
+    /* ============ 版本检测 store ============ */
+    const sidUpd = {
+      enabled: true,
+      red: false,
+      busy: false,
+      checked: false,
+      status: '未检查',
+      dshInstalled: '',
+      dshLatest: '',
+      plugins: [],
+      manualRepos: {},
+      ghBase: '',
+      autoUpdate: false,
+      lastAutoSig: '',
+      lastChecked: 0,
+      lastAgentScanAt: 0,
+    }
+    try {
+      const rawUpd = window.localStorage.getItem('sidor.box.upd')
+      if (rawUpd) {
+        const o = JSON.parse(rawUpd)
+        if (o && typeof o === 'object') {
+          if (typeof o.enabled === 'boolean') sidUpd.enabled = o.enabled
+          if (typeof o.checked === 'boolean') sidUpd.checked = o.checked
+          if (typeof o.lastChecked === 'number') sidUpd.lastChecked = o.lastChecked
+          if (typeof o.lastAgentScanAt === 'number') sidUpd.lastAgentScanAt = o.lastAgentScanAt
+          if (typeof o.status === 'string') sidUpd.status = o.status
+          if (typeof o.dshInstalled === 'string') sidUpd.dshInstalled = o.dshInstalled
+          if (typeof o.dshLatest === 'string') sidUpd.dshLatest = o.dshLatest
+          if (Array.isArray(o.plugins)) sidUpd.plugins = o.plugins
+          if (typeof o.red === 'boolean') sidUpd.red = o.red
+          if (o.manualRepos && typeof o.manualRepos === 'object') sidUpd.manualRepos = o.manualRepos
+          if (typeof o.ghBase === 'string') sidUpd.ghBase = o.ghBase
+          if (typeof o.autoUpdate === 'boolean') sidUpd.autoUpdate = o.autoUpdate
+          if (typeof o.lastAutoSig === 'string') sidUpd.lastAutoSig = o.lastAutoSig
+        }
+      }
+    } catch (e) { /* ignore */ }
+    function sidUpdSave() {
+      try {
+        window.localStorage.setItem('sidor.box.upd', JSON.stringify({
+          enabled: sidUpd.enabled,
+          red: sidUpd.red,
+          checked: sidUpd.checked,
+          status: sidUpd.status,
+          dshInstalled: sidUpd.dshInstalled,
+          dshLatest: sidUpd.dshLatest,
+          plugins: sidUpd.plugins,
+          manualRepos: sidUpd.manualRepos,
+          ghBase: sidUpd.ghBase,
+          autoUpdate: sidUpd.autoUpdate,
+          lastAutoSig: sidUpd.lastAutoSig,
+          lastChecked: sidUpd.lastChecked,
+          lastAgentScanAt: sidUpd.lastAgentScanAt,
+        }))
+      } catch (e) { /* ignore */ }
+    }
+    const sidUpdListeners = new Set()
+    function sidUpdNotify() { for (const fn of Array.from(sidUpdListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidUpdSubscribe(fn) { sidUpdListeners.add(fn); return () => sidUpdListeners.delete(fn) }
+    function sidUpdToggle() { sidUpd.enabled = !sidUpd.enabled; sidUpdSave(); sidUpdNotify() }
+    function sidUpdAutoToggle() { sidUpd.autoUpdate = !sidUpd.autoUpdate; sidUpdSave(); sidUpdNotify() }
+
+    async function sidFetchJson(url, timeoutMs) {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w) return null
+      const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null
+      const t = ctrl ? setTimeout(function () { ctrl.abort() }, timeoutMs || 6000) : null
+      const p = (async function () {
+        try {
+          const res = await w.fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+          if (!res.ok) return null
+          return await res.json()
+        } catch (e) {
+          return null
+        }
+      })()
+      return await sidWithTimeout(p, (timeoutMs || 6000) + 1000)
+    }
+
+    // 解析 GitHub 仓库：https://github.com/owner/repo / git@github.com:owner/repo.git / github:owner/repo / owner/repo
+    function sidGhRepo(repoStr) {
+      if (!repoStr || typeof repoStr !== 'string') return null
+      const s = repoStr.trim()
+      if (!s) return null
+      const m = s.match(/(?:github\.com[\/:]|github:)([^\/\s]+)\/([^\/\s\.]+)/i)
+      if (m) return m[1] + '/' + m[2]
+      const m2 = s.match(/^([\w.-]+)\/([\w.-]+)$/)
+      if (m2) return m2[1] + '/' + m2[2]
+      return null
+    }
+
+    async function sidGhLatestTag(repo) {
+      // 支持镜像基址：ghBase 为空时用官方 api.github.com；填写镜像时以其前缀拼接
+      const base = sidUpd.ghBase && sidUpd.ghBase.trim()
+        ? sidUpd.ghBase.trim().replace(/\/+$/, '')
+        : 'https://api.github.com'
+      const rel = await sidFetchJson(base + '/repos/' + repo + '/releases/latest', 6000)
+      if (rel && typeof rel.tag_name === 'string' && rel.tag_name) {
+        return String(rel.tag_name).replace(/^v/i, '')
+      }
+      const tags = await sidFetchJson(base + '/repos/' + repo + '/tags', 6000)
+      if (Array.isArray(tags) && tags.length > 0 && tags[0] && typeof tags[0].name === 'string' && tags[0].name) {
+        return String(tags[0].name).replace(/^v/i, '')
+      }
+      return ''
+    }
+
+    async function sidUpdCheck(explicit) {
+      if (sidUpd.busy) return
+      sidUpd.busy = true
+      sidUpd.status = '检查中…'
+      sidUpdNotify()
+      try {
+        let scan = null
+        try {
+          scan = await sidWithTimeout(host.call('sidor/upd-scan', { cfg: sidGuardCfg }), 10000)
+        } catch (e) { /* host 通道不可用（静态形态） */ }
+        if (scan && scan.ok) {
+          sidUpd.dshInstalled = (scan.dsh && scan.dsh.version) || ''
+          const third = (scan.plugins || []).filter(function (p) { return p.name.indexOf('@deepseek-ai/') !== 0 })
+          // 并发查询 npm 最新版
+          const npmRows = await Promise.all(third.map(async function (p) {
+            const npmLatest = await sidFetchJson('https://registry.npmjs.org/' + encodeURIComponent(p.name) + '/latest', 6000)
+            return { p: p, npmVer: npmLatest && npmLatest.version ? String(npmLatest.version) : '' }
+          }))
+          // npm 未命中的并发查询 GitHub（手动配置优先，其次 package.json repository）
+          const ghRows = await Promise.all(npmRows.map(async function (r) {
+            if (r.npmVer) return { p: r.p, npmVer: r.npmVer, gh: '', repo: '' }
+            const repo = sidUpd.manualRepos[r.p.name] || sidGhRepo(r.p.repo) || ''
+            if (!repo) return { p: r.p, npmVer: '', gh: '', repo: '' }
+            const gh = await sidGhLatestTag(repo)
+            return { p: r.p, npmVer: '', gh: gh, repo: repo }
+          }))
+          const rows = ghRows.map(function (r) {
+            let status = 'nofeed'
+            let latest = ''
+            let src = ''
+            if (r.npmVer) {
+              latest = r.npmVer
+              src = 'npm'
+              status = (r.p.installed && r.p.installed !== r.npmVer) ? 'update' : 'latest'
+            } else if (r.gh) {
+              latest = r.gh
+              src = 'github'
+              status = (r.p.installed && r.p.installed !== r.gh) ? 'gh-update' : 'gh-latest'
+            }
+            return { name: r.p.name, installed: r.p.installed, latest: latest, src: src, repo: r.repo || '', status: status }
+          })
+          sidUpd.plugins = rows
+          const dshL = await sidWithTimeout(sidFetchJson('https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest', 6000), 8000)
+          sidUpd.dshLatest = dshL && dshL.version ? dshL.version : ''
+          sidUpd.red = rows.some(function (r) { return r.status === 'update' || r.status === 'gh-update' })
+          sidUpd.checked = true
+          sidUpd.lastChecked = Date.now()
+          const updatable = rows.filter(function (r) { return r.status === 'update' || r.status === 'gh-update' })
+          const n = updatable.length
+          if (rows.length === 0 && !sidUpd.dshInstalled) {
+            sidUpd.status = 'Host 扫描完成但读取为空（沙箱可能阻止读取 profile 外文件）；可点击「立即检查更新」让 agent 代扫，或下方手动绑定 GitHub 仓库'
+          } else {
+            sidUpd.status = '检查完成：' + n + ' 个第三方插件可更新'
+          }
+          if (n > 0) sidToastShow('版本检测：' + n + ' 个插件可更新')
+          // 自动更新：开关开启且有可更新项 → 快照去重 → 发 agent 更新指令
+          if (sidUpd.autoUpdate && updatable.length > 0) {
+            const sig = updatable.map(function (r) { return r.name + '@' + (r.latest || '?') }).sort().join('|')
+            if (sig !== sidUpd.lastAutoSig) {
+              sidUpd.lastAutoSig = sig
+              const lines = updatable.map(function (r) {
+                const target = r.src === 'github'
+                  ? ('GitHub v' + r.latest + '（仓库 ' + r.repo + '）')
+                  : ('v' + r.latest)
+                const method = r.src === 'github'
+                  ? ('用 git 拉取该 tag / 下载 release 压缩包覆盖 node_modules\\' + r.name)
+                  : ('执行 npm/pnpm 安装 ' + r.name + '@' + r.latest)
+                return (r.name + ' 从 v' + (r.installed || '?') + ' 更新到 ' + target + '：' + method)
+              })
+              const backupHint = sidGuardCfg.enabled
+                ? '（防崩溃守护已启用，请先执行一次环境备份再更新）'
+                : '（建议先启用防崩溃守护或手动备份）'
+              sidPromptAgent('【SIDOR 自动更新】检测到 ' + updatable.length + ' 个插件有可用更新，请自动执行更新。' + sidGuardAgentPathHint() + ' ' + backupHint + ' 更新项：' + lines.join('；') + '。完成后验证 cordis.patch.yml 并逐项汇报结果。')
+              sidToastShow('已自动发起 ' + updatable.length + ' 个插件的更新')
+            }
+          }
+          sidUpdSave()
+        } else {
+          // 静态降级：仅显式点击按钮才向 agent 发扫描指令；自动检查只显示引导，不发送
+          const now = Date.now()
+          const remainMs = (sidUpd.lastAgentScanAt + 300000) - now
+          if (explicit && remainMs <= 0) {
+            sidUpd.status = '静态形态：已向 agent 发送扫描指令'
+            sidUpd.lastAgentScanAt = now
+            sidUpdSave()
+            sidPromptAgent('【SIDOR 版本检测】请扫描 DSH profile（' + sidGuardAgentPathHint() + '）下 cordis.patch.yml 列出的第三方插件，读取 profiles\\node_modules\\<name>\\package.json 的已装版本与 repository 字段（识别 GitHub 仓库）并汇报清单与版本；最新版本对比可查 npm registry（registry.npmjs.org/<name>/latest）或 GitHub releases/tags（api.github.com/repos/<owner>/<repo>/releases/latest）。')
+          } else if (explicit) {
+            sidUpd.status = 'agent 扫描请求已发出（' + Math.max(0, Math.round(remainMs / 1000)) + ' 秒后可再次请求）'
+          } else {
+            sidUpd.status = '静态形态：Host 通道不可用，点击「立即检查更新」将由 agent 代执行扫描'
+          }
+        }
+      } finally {
+        sidUpd.busy = false
+        sidUpdNotify()
+      }
+    }
+
+    /* ============ 右侧轨道模块注册表 ============ */
+    const railModules = new Map()
+    const railListeners = new Set()
+    function railNotify() { for (const fn of Array.from(railListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function railSubscribe(fn) { railListeners.add(fn); return () => railListeners.delete(fn) }
+    function railRegisterModule(mod) { railModules.set(mod.id, mod); railNotify() }
+
+    /* ============ 横向滑动开关 ============ */
+    function Toggle({ id, checked, onChange, label }) {
+      return React.createElement('button', {
+        id: id,
+        type: 'button',
+        role: 'switch',
+        'aria-checked': checked,
+        'aria-label': label,
+        className: 'sid-toggle' + (checked ? ' on' : ''),
+        onClick: onChange,
+      },
+        React.createElement('span', { className: 'sid-toggle-track', 'aria-hidden': true },
+          React.createElement('span', { className: 'sid-toggle-thumb', 'aria-hidden': true }),
+        ),
+      )
+    }
+
+    function TooltipBox({ title, line }) {
+      return React.createElement('div', { className: 'sid-tooltip', role: 'tooltip' },
+        React.createElement('span', { className: 'sid-tooltip-title' }, title),
+        React.createElement('span', { className: 'sid-tooltip-line' }, line),
+      )
+    }
+
+    /* ============ 轨道项①：四芒星 ============ */
+    function PriceStar() {
+      const [state, setState] = React.useState({ peak: sidPrice.peak, weekend: sidPrice.weekend })
+      const [hover, setHover] = React.useState(false)
+      React.useEffect(() => sidPriceSubscribe(() => setState({ peak: sidPrice.peak, weekend: sidPrice.weekend })), [])
+      const statusText = state.weekend
+        ? '周末全天（周六/周日）：不区分峰谷，统一按低谷价格'
+        : (state.peak ? '高峰时段（9:00-12:00、14:00-18:00）：价格上浮' : '空闲时段：价格优惠')
+      return React.createElement('span', {
+        className: 'sid-price-star-box',
+        role: 'img',
+        'aria-label': 'DeepSeek 峰谷价格提示：' + statusText,
+        tabIndex: 0,
+        onPointerEnter: () => setHover(true),
+        onPointerLeave: () => setHover(false),
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+      },
+        React.createElement('span', { className: 'sid-price-star' + (state.peak ? ' peak' : '') },
+          React.createElement('span', { className: 'sid-price-star-tw', dangerouslySetInnerHTML: { __html: ICON_PRICE_STAR } }),
+        ),
+        hover ? React.createElement(TooltipBox, { title: 'DeepSeek 峰谷价格提示', line: statusText }) : null,
+      )
+    }
+    railRegisterModule({ id: 'sidor-price', order: 10, active: () => sidPrice.enabled, render: () => React.createElement(PriceStar) })
+
+    /* ============ 轨道项②：任务完成铃铛 ============ */
+    function NotifyIcon() {
+      const [permission, setPermission] = React.useState(sidNotify.permission)
+      const [hover, setHover] = React.useState(false)
+      React.useEffect(() => sidNotifySubscribe(() => setPermission(sidNotify.permission)), [])
+      const statusText = permission === 'granted'
+        ? '系统通知已开启'
+        : (permission === 'denied' ? '系统通知被拒绝，改用界面提示' : (permission === 'unsupported' ? '浏览器不支持系统通知，改用界面提示' : '系统通知未授权'))
+      return React.createElement('span', {
+        className: 'sid-rail-icon-box',
+        role: 'img',
+        'aria-label': 'Agent 任务完成提示：已开启',
+        tabIndex: 0,
+        onPointerEnter: () => setHover(true),
+        onPointerLeave: () => setHover(false),
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+      },
+        React.createElement('span', { className: 'sid-rail-icon', dangerouslySetInnerHTML: { __html: ICON_NOTIFY } }),
+        hover ? React.createElement(TooltipBox, { title: 'Agent 任务完成提示', line: statusText }) : null,
+      )
+    }
+    railRegisterModule({ id: 'sidor-notify', order: 20, active: () => sidNotify.enabled, render: () => React.createElement(NotifyIcon) })
+
+    /* ============ 轨道项③：看门狗秒表 ============ */
+    function WatchIcon() {
+      const [st, setSt] = React.useState({ red: sidWatch.red, phase: sidWatch.phase, elapsed: sidWatch.elapsed })
+      const [hover, setHover] = React.useState(false)
+      React.useEffect(() => sidWatchSubscribe(() => setSt({ red: sidWatch.red, phase: sidWatch.phase, elapsed: sidWatch.elapsed })), [])
+      const line = sidWatchStatusText()
+      return React.createElement('span', {
+        className: 'sid-rail-icon-box',
+        role: 'img',
+        'aria-label': 'Agent 任务进度查询（看门狗）：' + line,
+        tabIndex: 0,
+        onPointerEnter: () => setHover(true),
+        onPointerLeave: () => setHover(false),
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+      },
+        React.createElement('span', { className: 'sid-rail-icon' + (st.red ? ' warn' : ''), dangerouslySetInnerHTML: { __html: ICON_WATCH } }),
+        hover ? React.createElement(TooltipBox, { title: 'Agent 任务进度查询', line: line }) : null,
+      )
+    }
+    railRegisterModule({ id: 'sidor-watch', order: 30, active: () => sidWatch.enabled && sidWatch.listenSec > 0, render: () => React.createElement(WatchIcon) })
+
+    /* ============ 轨道项④：审批盾牌 ============ */
+    function ApprovalIcon() {
+      const [st, setSt] = React.useState({ red: sidApproval.red, dom: sidApproval.domPresent })
+      const [hover, setHover] = React.useState(false)
+      React.useEffect(() => sidApprovalSubscribe(() => setSt({ red: sidApproval.red, dom: sidApproval.domPresent })), [])
+      const line = (st.dom || st.red) ? '有审批待处理' : '审批通知提醒：已开启'
+      return React.createElement('span', {
+        className: 'sid-rail-icon-box',
+        role: 'img',
+        'aria-label': '审批通知提醒：' + line,
+        tabIndex: 0,
+        onPointerEnter: () => setHover(true),
+        onPointerLeave: () => setHover(false),
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+      },
+        React.createElement('span', { className: 'sid-rail-icon' + ((st.dom || st.red) ? ' warn' : ''), dangerouslySetInnerHTML: { __html: ICON_APPROVAL } }),
+        hover ? React.createElement(TooltipBox, { title: '审批通知提醒', line: line }) : null,
+      )
+    }
+    railRegisterModule({ id: 'sidor-approval', order: 40, active: () => sidApproval.enabled, render: () => React.createElement(ApprovalIcon) })
+
+    /* ============ 轨道项⑤：防崩溃守护 ============ */
+    function GuardIcon() {
+      const [st, setSt] = React.useState({ enabled: sidGuard.enabled, status: sidGuard.status })
+      const [hover, setHover] = React.useState(false)
+      React.useEffect(() => sidGuardSubscribe(() => setSt({ enabled: sidGuard.enabled, status: sidGuard.status })), [])
+      const line = st.enabled ? ('防崩溃守护：已开启（' + st.status + '）') : '防崩溃守护：已关闭'
+      const openConfirm = (e) => {
+        if (e && e.preventDefault) e.preventDefault()
+        if (!sidGuard.enabled) { sidToastShow('防崩溃守护未开启，请先在设置-工具箱中启用'); return }
+        sidGuard.confirmOpen = true
+        sidGuardNotify()
+      }
+      return React.createElement('span', {
+        className: 'sid-rail-icon-box sid-rail-action',
+        role: 'img',
+        'aria-label': '防崩溃守护：' + line + '（双击立即备份）',
+        title: '双击立即备份',
+        tabIndex: 0,
+        onPointerEnter: () => setHover(true),
+        onPointerLeave: () => setHover(false),
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+        onDoubleClick: (e) => openConfirm(e),
+        onKeyDown: (e) => { if (e.key === 'Enter') openConfirm(e) },
+      },
+        React.createElement('span', { className: 'sid-rail-icon', dangerouslySetInnerHTML: { __html: ICON_GUARD } }),
+        hover ? React.createElement(TooltipBox, { title: '防崩溃守护', line: line + '（双击立即备份）' }) : null,
+      )
+    }
+    railRegisterModule({ id: 'sidor-guard', order: 50, active: () => sidGuard.enabled, render: () => React.createElement(GuardIcon) })
+
+    /* ============ 防崩溃守护：二级确认备份弹窗（统一官方弹窗风格） ============ */
+    function GuardConfirmDialog() {
+      const [st, setSt] = React.useState({ open: sidGuard.confirmOpen, busy: sidGuard.busy, status: sidGuard.status, archive: sidGuardCfg.archivePath || sidDeriveDefaultArchive() || '' })
+      React.useEffect(() => sidGuardSubscribe(() => {
+        setSt({ open: sidGuard.confirmOpen, busy: sidGuard.busy, status: sidGuard.status, archive: sidGuardCfg.archivePath || sidDeriveDefaultArchive() || '' })
+      }), [])
+      React.useEffect(() => {
+        if (!st.open) return
+        const onKey = (e) => { if (e.key === 'Escape') { sidGuard.confirmOpen = false; sidGuardNotify() } }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+      }, [st.open])
+      if (!st.open) return null
+      const close = () => { sidGuard.confirmOpen = false; sidGuardNotify() }
+      const doBackup = () => {
+        close()
+        try { sidGuardBackup() } catch (e) { /* 备份内部已兜底，此处仅防未处理拒绝 */ }
+      }
+      return React.createElement('div', {
+        className: 'sid-guard-confirm-overlay',
+        role: 'presentation',
+        onPointerDown: (e) => { if (e.target === e.currentTarget) close() },
+      },
+        React.createElement('div', { className: 'sid-guard-confirm-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': '防崩溃守护：确认备份' },
+          React.createElement('div', { className: 'sid-guard-confirm-head' },
+            React.createElement('span', { className: 'sid-guard-confirm-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_GUARD } }),
+            React.createElement('span', { className: 'sid-guard-confirm-title' }, '防崩溃守护 — 确认备份'),
+          ),
+          React.createElement('p', { className: 'sid-guard-confirm-desc' },
+            '即将把 DSH profile 的关键配置（cordis.patch.yml 与锁定文件）备份到：'),
+          React.createElement('div', { className: 'sid-guard-confirm-path' }, st.archive || '（存档路径未配置，将由 agent 自动决定）'),
+          React.createElement('p', { className: 'sid-guard-confirm-desc' },
+            '备份会生成新快照（snap-时间戳）并附带 restore.cmd 一键回退脚本；滚动保留最近备份（可设上限）。'),
+          React.createElement('div', { className: 'sid-guard-confirm-status' },
+            '当前状态：' + (st.status || '未检测') + (st.busy ? '（备份处理中…）' : '')),
+          React.createElement('div', { className: 'sid-guard-confirm-actions' },
+            React.createElement('button', {
+              type: 'button',
+              className: 'sid-toolbox-card-btn',
+              onClick: () => close(),
+            }, '取消'),
+            React.createElement('button', {
+              type: 'button',
+              className: 'sid-toolbox-card-btn sid-guard-confirm-primary',
+              disabled: st.busy,
+              onClick: () => doBackup(),
+            }, st.busy ? '备份中…' : '确认备份'),
+          ),
+        ),
+      )
+    }
+
+    /* ============ 轨道项⑥：版本更新（可更新时标红） ============ */
+    function UpdIcon() {
+      const [st, setSt] = React.useState({ red: sidUpd.red, status: sidUpd.status, enabled: sidUpd.enabled })
+      const [hover, setHover] = React.useState(false)
+      React.useEffect(() => sidUpdSubscribe(() => setSt({ red: sidUpd.red, status: sidUpd.status, enabled: sidUpd.enabled })), [])
+      const line = st.red ? '有可用更新：' + st.status : ('版本检测：' + st.status)
+      return React.createElement('span', {
+        className: 'sid-rail-icon-box',
+        role: 'img',
+        'aria-label': '版本更新检测：' + line,
+        tabIndex: 0,
+        onPointerEnter: () => setHover(true),
+        onPointerLeave: () => setHover(false),
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+      },
+        React.createElement('span', { className: 'sid-rail-icon' + (st.red ? ' warn' : ''), dangerouslySetInnerHTML: { __html: ICON_UPD } }),
+        hover ? React.createElement(TooltipBox, { title: '插件与 DSH 版本检测', line: line }) : null,
+      )
+    }
+    railRegisterModule({ id: 'sidor-upd', order: 60, active: () => sidUpd.enabled, render: () => React.createElement(UpdIcon) })
+
+    /* ============ 轨道 + toast（shell.overlay） ============ */
+    function ToolboxRail() {
+      const [, setTick] = React.useState(0)
+      React.useEffect(() => {
+        const u1 = railSubscribe(() => setTick((t) => t + 1))
+        const u2 = sidPriceSubscribe(() => setTick((t) => t + 1))
+        const u3 = sidNotifySubscribe(() => setTick((t) => t + 1))
+        const u4 = sidWatchSubscribe(() => setTick((t) => t + 1))
+        const u5 = sidApprovalSubscribe(() => setTick((t) => t + 1))
+        const u6 = sidGuardSubscribe(() => setTick((t) => t + 1))
+        const u7 = sidUpdSubscribe(() => setTick((t) => t + 1))
+        return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7() }
+      }, [])
+      const items = Array.from(railModules.values())
+        .filter((m) => !m.active || m.active())
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+      if (items.length === 0) return null
+      return React.createElement('div', { className: 'sid-rail' },
+        items.map((m) => React.createElement('div', { key: m.id, className: 'sid-rail-item' }, m.render())),
+      )
+    }
+
+    function NotifyToast() {
+      const [toast, setToast] = React.useState(sidToast)
+      React.useEffect(() => sidToastSubscribe(() => setToast(sidToast)), [])
+      React.useEffect(() => {
+        if (toast.text === '') return
+        const d = ctx.timeout(() => sidToastClear(), 4200)
+        return () => d()
+      }, [toast.seq])
+      if (toast.text === '') return null
+      return React.createElement('div', { className: 'sid-notify-toast', role: 'status' },
+        React.createElement('span', { className: 'sid-notify-toast-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_NOTIFY } }),
+        React.createElement('span', null, toast.text),
+      )
+    }
+
+    function ToolboxOverlay() {
+      return React.createElement(React.Fragment, null,
+        React.createElement(ToolboxRail),
+        React.createElement(NotifyToast),
+        React.createElement(GuardConfirmDialog),
+      )
+    }
+
+    slots.inject('shell.overlay', () => slots.register(
+      { name: 'shell.overlay', id: 'sidor-toolbox-rail', order: 150, label: '工具箱轨道' },
+      () => React.createElement(ToolboxOverlay),
+    ))
+
+    /* ============ 任务完成检测：turnTail（基线持久化） ============ */
+    let sidNotifiedSeq = {}
+    try {
+      const raw = window.localStorage.getItem('sidor.box.notifiedSeq')
+      if (raw) {
+        const o = JSON.parse(raw)
+        if (o && typeof o === 'object') sidNotifiedSeq = o
+      }
+    } catch (e) { /* ignore */ }
+    function sidNotifiedSave() {
+      try { window.localStorage.setItem('sidor.box.notifiedSeq', JSON.stringify(sidNotifiedSeq)) } catch (e) { /* ignore */ }
+    }
+    function TurnTailWatcher(props) {
+      const seq = props.matched && props.matched.seq
+      React.useEffect(() => {
+        if (typeof seq !== 'number') return
+        const sessionId = props.sessionId || ''
+        const prev = sidNotifiedSeq[sessionId]
+        if (prev === undefined) {
+          sidNotifiedSeq[sessionId] = seq
+          sidNotifiedSave()
+          return
+        }
+        if (seq <= prev) return
+        sidNotifiedSeq[sessionId] = seq
+        sidNotifiedSave()
+        if (sidNotify.enabled) sidNotifyFire('Agent 任务完成', 'Agent 已完成回复，可回到 DSH 查看。')
+        sidWatchReset()
+      }, [])
+      return null
+    }
+    slots.inject('conversation.chat.turnTail', () => slots.register(
+      { name: 'conversation.chat.turnTail', select: (owner) => ({ seq: owner.seq }) },
+      (props) => React.createElement(TurnTailWatcher, props),
+    ))
+
+    /* ============ DockWatcher ============ */
+    function DockWatcher(props) {
+      if (props.sessionId) sidActiveSessionId = props.sessionId
+      sidClientActivityAt = Date.now()
+      const sig = sidInputRunningSignal(props.input)
+      React.useEffect(() => {
+        if (sig !== null && sig !== sidWatchInputRunning) {
+          sidWatchInputRunning = sig
+        }
+      })
+      return null
+    }
+    slots.inject('conversation.input.dock', () => slots.register(
+      { name: 'conversation.input.dock', id: 'sidor-watch-dock', order: 50, label: '看门狗' },
+      (props) => React.createElement(DockWatcher, props),
+    ))
+
+    /* ============ 设置页：工具箱 ============ */
+    function ToolboxSettingsPage() {
+      const [priceEnabled, setPriceEnabled] = React.useState(sidPrice.enabled)
+      const [notifyEnabled, setNotifyEnabled] = React.useState(sidNotify.enabled)
+      const [notifyPerm, setNotifyPerm] = React.useState(sidNotify.permission)
+      const [watchEnabled, setWatchEnabled] = React.useState(sidWatch.enabled)
+      const [watchListen, setWatchListen] = React.useState(String(sidWatch.listenSec))
+      const [watchKill, setWatchKill] = React.useState(String(sidWatch.killSec))
+      const [watchStatus, setWatchStatus] = React.useState(sidWatchStatusText())
+      const [approvalEnabled, setApprovalEnabled] = React.useState(sidApproval.enabled)
+      const [approvalHost, setApprovalHost] = React.useState(sidApproval.hostCalls)
+      const [approvalDom, setApprovalDom] = React.useState(sidApproval.domPresent)
+      const [testResult, setTestResult] = React.useState('')
+      const [guardEnabled, setGuardEnabled] = React.useState(sidGuard.enabled)
+      const [guardStatus, setGuardStatus] = React.useState(sidGuard.status)
+      const [guardProfile, setGuardProfile] = React.useState(sidGuardCfg.profilePath)
+      const [guardArchive, setGuardArchive] = React.useState(sidGuardCfg.archivePath)
+      const [guardMax, setGuardMax] = React.useState(String(sidGuardCfg.maxBackups))
+      const [guardHistory, setGuardHistory] = React.useState([])
+      const [guardBusy, setGuardBusy] = React.useState(false)
+      const [guardHostOk, setGuardHostOk] = React.useState(sidGuard.hostOk)
+      const [updEnabled, setUpdEnabled] = React.useState(sidUpd.enabled)
+      const [updStatus, setUpdStatus] = React.useState(sidUpd.status)
+      const [updBusy, setUpdBusy] = React.useState(false)
+      const [updDsh, setUpdDsh] = React.useState({ installed: sidUpd.dshInstalled, latest: sidUpd.dshLatest })
+      const [updPlugins, setUpdPlugins] = React.useState(sidUpd.plugins)
+      const [updRepos, setUpdRepos] = React.useState(sidUpd.manualRepos)
+      const [updGhBase, setUpdGhBase] = React.useState(sidUpd.ghBase)
+      const [updAuto, setUpdAuto] = React.useState(sidUpd.autoUpdate)
+      const [addName, setAddName] = React.useState('')
+      const [addRepo, setAddRepo] = React.useState('')
+      React.useEffect(() => {
+        const u1 = sidPriceSubscribe(() => setPriceEnabled(sidPrice.enabled))
+        const u2 = sidNotifySubscribe(() => {
+          setNotifyEnabled(sidNotify.enabled)
+          setNotifyPerm(sidNotify.permission)
+        })
+        const u3 = sidWatchSubscribe(() => {
+          setWatchEnabled(sidWatch.enabled)
+          setWatchListen(String(sidWatch.listenSec))
+          setWatchKill(String(sidWatch.killSec))
+          setWatchStatus(sidWatchStatusText())
+        })
+        const u4 = sidApprovalSubscribe(() => {
+          setApprovalEnabled(sidApproval.enabled)
+          setApprovalHost(sidApproval.hostCalls)
+          setApprovalDom(sidApproval.domPresent)
+        })
+        const u5 = sidGuardSubscribe(() => {
+          setGuardEnabled(sidGuard.enabled)
+          setGuardStatus(sidGuard.status)
+          setGuardHistory(sidGuard.history)
+          setGuardBusy(sidGuard.busy)
+          setGuardHostOk(sidGuard.hostOk)
+        })
+        const u6 = sidUpdSubscribe(() => {
+          setUpdEnabled(sidUpd.enabled)
+          setUpdStatus(sidUpd.status)
+          setUpdBusy(sidUpd.busy)
+          setUpdDsh({ installed: sidUpd.dshInstalled, latest: sidUpd.dshLatest })
+          setUpdPlugins(sidUpd.plugins)
+          setUpdRepos(sidUpd.manualRepos)
+          setUpdGhBase(sidUpd.ghBase)
+          setUpdAuto(sidUpd.autoUpdate)
+        })
+        // 进入设置-工具箱页面时自动触发一次版本检查（静态形态下仅显示引导，不向 agent 发消息）
+        if (sidUpd.enabled && !sidUpd.busy && !sidUpd.checked) sidUpdCheck(false)
+        return () => { u1(); u2(); u3(); u4(); u5(); u6() }
+      }, [])
+      const permText = notifyPerm === 'granted'
+        ? '系统通知已授权'
+        : (notifyPerm === 'denied' ? '系统通知已拒绝' : (notifyPerm === 'unsupported' ? '浏览器不支持系统通知' : '系统通知未授权'))
+      const runTest = () => {
+        const r = sidNotifyTest()
+        const text = '测试结果：' + (r.result || '无结果') + '（Notification=' + (r.notificationType || '?') + '，权限=' + (r.permission || '?') + '）'
+        setTestResult(text)
+        sidToastShow(text)
+      }
+      const toggleGuard = () => {
+        sidGuard.enabled = !sidGuard.enabled
+        sidGuardCfg.enabled = sidGuard.enabled
+        sidGuardSave()
+        sidGuardNotify()
+        if (sidGuard.enabled) { sidGuardCheck(); sidGuardHistory() }
+      }
+      const setGuardField = (k, v) => {
+        sidGuardCfg[k] = v
+        sidGuardSave()
+        sidGuardNotify()
+      }
+      const agentRollback = (id) => {
+        sidPromptAgent('【SIDOR 防崩溃守护】请执行回退。' + sidGuardAgentPathHint() + ' 然后：找到备份快照 ' + id + '（存档文件夹 ' + (sidGuardCfg.archivePath || '<存档目录>') + '），将其中 cordis.patch.yml 等配置文件复制回 profile 覆盖，必要时运行 restore.cmd；完成后汇报。')
+        sidToastShow('已向 agent 发送回退指令')
+      }
+      const updRun = () => { sidUpdCheck(true) }
+      const saveRepo = (name, v) => {
+        const val = (v || '').trim()
+        if (val) sidUpd.manualRepos[name] = val
+        else delete sidUpd.manualRepos[name]
+        sidUpdSave()
+        sidUpdNotify()
+        sidUpdCheck(true)
+      }
+      const addBinding = () => {
+        const n = (addName || '').trim()
+        const r = (addRepo || '').trim()
+        if (!n || !r) { sidToastShow('请填写插件名与仓库（格式 用户名/仓库名）'); return }
+        sidUpd.manualRepos[n] = r
+        sidUpdSave()
+        sidUpdNotify()
+        setAddName('')
+        setAddRepo('')
+        sidUpdCheck(true)
+      }
+      const saveGhBase = (v) => {
+        sidUpd.ghBase = (v || '').trim()
+        sidUpdSave()
+        sidUpdNotify()
+        sidUpdCheck(true)
+      }
+      const updPlugin = (p) => {
+        const hint = sidGuardAgentPathHint()
+        if (p.src === 'github') {
+          sidPromptAgent('【SIDOR 版本检测】请将第三方插件 ' + p.name + ' 从 v' + p.installed + ' 更新到 GitHub 版本 v' + p.latest + '（仓库 ' + p.repo + '）：在 DSH profile 的 node_modules 对应包（' + hint + '）用 git 拉取该 tag / 下载对应 release 压缩包覆盖，或执行官方安装脚本；完成后验证 cordis.patch.yml 并汇报。建议先手动备份（可用防崩溃守护）。')
+        } else {
+          sidPromptAgent('【SIDOR 版本检测】请将第三方插件 ' + p.name + ' 从 v' + p.installed + ' 更新到 v' + p.latest + '：在 DSH profile 的 node_modules 对应包（' + hint + '）执行安装/更新命令（如 npm/pnpm 安装 ' + p.name + '@' + p.latest + ' 或官方安装脚本），完成后验证 cordis.patch.yml 并汇报。建议先手动备份（可用防崩溃守护）。')
+        }
+        sidToastShow('已向 agent 发送更新指令：' + p.name)
+      }
+      return React.createElement('div', { className: 'sid-toolbox-page' },
+        React.createElement('div', { className: 'sid-toolbox-head' },
+          React.createElement('h3', { className: 'sid-toolbox-page-title' }, '工具箱'),
+          React.createElement('div', { className: 'sid-toolbox-perm' },
+            React.createElement('span', { className: 'sid-toolbox-perm-text' }, permText),
+            notifyPerm === 'default' ? React.createElement('button', {
+              type: 'button',
+              className: 'sid-toolbox-card-btn',
+              onClick: () => sidNotifyRequest(),
+            }, '授权系统通知') : null,
+          ),
+        ),
+        React.createElement('p', { className: 'sid-toolbox-page-desc' },
+          'SIDOR 工具箱：常用工具与快捷功能的集合页。开启的功能会在工作区右侧轨道显示对应图标。'),
+        React.createElement('div', { className: 'sid-toolbox-grid' },
+          React.createElement('div', { className: 'sid-toolbox-card' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_PRICE_STAR } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, 'DeepSeek 峰谷价格提示'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              '工作区右侧显示四芒星：工作日高峰时段（北京时间 9:00-12:00、14:00-18:00）红色呼吸辉光，空闲时段白色闪耀呼吸辉光；周末（周六/周日）全天不区分峰谷，统一按低谷价格（白色辉光）。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '启用'),
+              React.createElement(Toggle, {
+                id: 'sid-price-toggle',
+                checked: priceEnabled,
+                onChange: () => sidPriceToggle(),
+                label: 'DeepSeek 峰谷价格提示：' + (priceEnabled ? '开' : '关'),
+              }),
+            ),
+          ),
+          React.createElement('div', { className: 'sid-toolbox-card' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_NOTIFY } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, 'Agent 任务完成提示'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              'Agent 完成回复时发送系统通知（跨网页提醒，切到其他页面/应用也能收到）。纯客户端检测，不消耗 token；未授权时改用界面提示。通知权限请在页面上方标题旁授权。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '启用'),
+              React.createElement(Toggle, {
+                id: 'sid-notify-toggle',
+                checked: notifyEnabled,
+                onChange: () => sidNotifyToggle(),
+                label: 'Agent 任务完成提示：' + (notifyEnabled ? '开' : '关'),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '通知测试'),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                onClick: () => runTest(),
+              }, '发送测试通知'),
+            ),
+            testResult !== '' ? React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, testResult),
+            ) : null,
+          ),
+          React.createElement('div', { className: 'sid-toolbox-card' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_WATCH } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, 'Agent 任务进度查询'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              '监听 Agent 任务是否卡住（运行中且长时间无进展）。检测到卡住后开始第一次倒计时（监听时长），到点通过浏览器发出任务异常提醒（不掐断、图标标红）；第二次倒计时（掐断等待）到点自动掐断任务并要求 Agent 自检卡住原因。监听时长为 0 时插件不工作；掐断等待为 0 时提醒后立即掐断。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '启用'),
+              React.createElement(Toggle, {
+                id: 'sid-watch-toggle',
+                checked: watchEnabled,
+                onChange: () => sidWatchToggle(),
+                label: 'Agent 任务进度查询：' + (watchEnabled ? '开' : '关'),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-watch-listen' }, '监听时长（秒，0=不工作）'),
+              React.createElement('input', {
+                id: 'sid-watch-listen',
+                className: 'sid-toolbox-input sid-toolbox-input-num',
+                type: 'number',
+                min: '0',
+                value: watchListen,
+                onChange: (e) => setWatchListen(e.target.value),
+                onBlur: () => sidWatchSetListen(watchListen),
+                onKeyDown: (e) => { if (e.key === 'Enter') sidWatchSetListen(watchListen) },
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-watch-kill' }, '掐断等待（秒，0=立即）'),
+              React.createElement('input', {
+                id: 'sid-watch-kill',
+                className: 'sid-toolbox-input sid-toolbox-input-num',
+                type: 'number',
+                min: '0',
+                value: watchKill,
+                onChange: (e) => setWatchKill(e.target.value),
+                onBlur: () => sidWatchSetKill(watchKill),
+                onKeyDown: (e) => { if (e.key === 'Enter') sidWatchSetKill(watchKill) },
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '当前状态：' + watchStatus),
+            ),
+          ),
+          React.createElement('div', { className: 'sid-toolbox-card' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_APPROVAL } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, '审批通知提醒'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              '工作区会话需要审批下一步操作时，弹出系统通知并告知哪个对话需要处理（通知驻留直到处理）。Host 审批事件 + 界面审批卡探测双通道，不消耗 token。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '启用'),
+              React.createElement(Toggle, {
+                id: 'sid-approval-toggle',
+                checked: approvalEnabled,
+                onChange: () => sidApprovalToggle(),
+                label: '审批通知提醒：' + (approvalEnabled ? '开' : '关'),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, 'Host 审批事件：' + approvalHost + ' 次；界面审批卡：' + (approvalDom ? '检测中' : '无')),
+            ),
+          ),
+          React.createElement('div', { className: 'sid-toolbox-card sid-toolbox-guard' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_GUARD } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, '防崩溃守护'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              '自动检测 DSH profile 路径并创建恢复存档：插件/环境变动前自动备份配置文件（cordis.patch.yml 与锁定文件），保留历史快照（可设上限，滚动覆盖）；生成一键回退脚本；界面可选历史版本回退或让 agent 代执行；插件激活时自动进行环境安全检测，异常时尝试回退到最近安全备份。路径等配置经浏览器本地存储持久化，动态/静态形态共用，一次填写即可；静态形态下 agent 代执行可自动检测路径。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '启用防崩溃守护'),
+              React.createElement(Toggle, {
+                id: 'sid-guard-toggle',
+                checked: guardEnabled,
+                onChange: () => toggleGuard(),
+                label: '防崩溃守护：' + (guardEnabled ? '开' : '关'),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '状态：' + guardStatus + (guardHostOk ? '' : '（静态形态，文件操作由 agent 代执行）')),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-guard-profile' }, 'DSH profile 路径（自动检测，可改）'),
+              React.createElement('input', {
+                id: 'sid-guard-profile',
+                className: 'sid-toolbox-input',
+                type: 'text',
+                placeholder: '例如 C:\\Users\\你的用户名\\.dsh\\profiles\\web；留空时静态形态由 agent 自动检测',
+                value: guardProfile,
+                onChange: (e) => setGuardProfile(e.target.value),
+                onBlur: () => {
+                  setGuardField('profilePath', guardProfile.trim())
+                  // profile 填好后自动推导并回填存档路径（未手动设置过时）
+                  sidGuardEnsureArchiveDefault()
+                },
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-guard-archive' }, '恢复存档文件夹（可改）'),
+              React.createElement('input', {
+                id: 'sid-guard-archive',
+                className: 'sid-toolbox-input',
+                type: 'text',
+                placeholder: '留空将自动推导为 profile 同级 .sidor-backup；也可手动填写',
+                value: guardArchive,
+                onChange: (e) => setGuardArchive(e.target.value),
+                onBlur: () => setGuardField('archivePath', guardArchive.trim()),
+              }),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                onClick: () => {
+                  const ok = sidGuardEnsureArchiveDefault()
+                  if (!ok) {
+                    if (!gIsAbsPath(sidGuardCfg.profilePath)) {
+                      sidToastShow('请先填写 DSH profile 路径，再自动推导存档路径')
+                    } else {
+                      sidToastShow('存档路径已是有效值：' + sidGuardCfg.archivePath)
+                    }
+                  } else {
+                    sidToastShow('已自动推导存档路径：' + sidGuardCfg.archivePath)
+                  }
+                },
+              }, '自动推导'),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-guard-max' }, '最大备份数（0=不限）'),
+              React.createElement('input', {
+                id: 'sid-guard-max',
+                className: 'sid-toolbox-input sid-toolbox-input-num',
+                type: 'number',
+                min: '0',
+                value: guardMax,
+                onChange: (e) => setGuardMax(e.target.value),
+                onBlur: () => setGuardField('maxBackups', parseInt(guardMax, 10) || 0),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                disabled: guardBusy,
+                onClick: () => { sidGuardBackup() },
+              }, guardBusy ? '处理中…' : '立即备份'),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                onClick: () => { sidGuardCheck(); sidGuardHistory() },
+              }, '检测 & 刷新'),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '历史备份（选择回退）：'),
+            ),
+            guardHistory.length === 0
+              ? React.createElement('div', { className: 'sid-toolbox-card-row' },
+                  React.createElement('span', { className: 'sid-toolbox-card-row-label' }, guardHostOk ? '暂无备份' : '静态形态无法读取历史，可由 agent 代查'),
+                )
+              : guardHistory.map((it) => React.createElement('div', { key: it.id, className: 'sid-toolbox-card-row' },
+                  React.createElement('span', { className: 'sid-toolbox-card-row-label' }, it.id + (it.note ? '（' + it.note + '）' : '')),
+                  React.createElement('button', {
+                    type: 'button',
+                    className: 'sid-toolbox-card-btn',
+                    disabled: guardBusy,
+                    onClick: () => sidGuardRollback(it.id),
+                  }, '回退到此版本'),
+                  React.createElement('button', {
+                    type: 'button',
+                    className: 'sid-toolbox-card-btn',
+                    onClick: () => agentRollback(it.id),
+                  }, 'agent 回退'),
+                )),
+          ),
+          React.createElement('div', { className: 'sid-toolbox-card sid-toolbox-guard' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_UPD } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, '插件与 DSH 版本检测'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              '检测 DSH 客户端版本，并对用户安装的第三方插件（cordis.patch.yml 中非官方 @deepseek-ai 插件）查询最新版本：npm registry 优先；npm 未命中且有 GitHub 仓库（package.json repository 字段或下方手动填写）时转查 GitHub releases/tags。可更新时右侧图标标红。进入本页自动检查一次；更新执行由 agent 代操作，建议先备份。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '启用版本检测'),
+              React.createElement(Toggle, {
+                id: 'sid-upd-toggle',
+                checked: updEnabled,
+                onChange: () => sidUpdToggle(),
+                label: '版本检测：' + (updEnabled ? '开' : '关'),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '自动更新（检测到新版本自动发起更新，建议先启用防崩溃守护）'),
+              React.createElement(Toggle, {
+                id: 'sid-upd-auto-toggle',
+                checked: updAuto,
+                onChange: () => sidUpdAutoToggle(),
+                label: '自动更新：' + (updAuto ? '开' : '关'),
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '状态：' + updStatus),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                disabled: updBusy,
+                onClick: () => updRun(),
+              }, updBusy ? '检查中…' : '立即检查更新'),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, 'DSH 客户端版本：' + (updDsh.installed || '未检测到（静态形态由 agent 代扫汇报）') + (updDsh.latest ? '（npm 官方最新 ' + updDsh.latest + '）' : '')),
+            ),
+            updPlugins.length === 0
+              ? React.createElement('div', { className: 'sid-toolbox-card-row' },
+                  React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '未检测到第三方插件（静态形态需手动绑定或由 agent 代扫汇报）'),
+                )
+              : updPlugins.map((p) => React.createElement('div', { key: p.name, className: 'sid-toolbox-card-row' },
+                  React.createElement('span', { className: 'sid-toolbox-card-row-label' },
+                    p.name + '：v' + (p.installed || '?') + ' → ' +
+                    (p.status === 'update' ? ('v' + p.latest + '（npm 可更新）') :
+                     p.status === 'gh-update' ? ('v' + p.latest + '（GitHub 可更新）') :
+                     p.status === 'latest' ? '已是最新' :
+                     p.status === 'gh-latest' ? '已是最新（GitHub）' : '未发布到 npm/GitHub'),
+                  ),
+                  (p.status === 'update' || p.status === 'gh-update') ? React.createElement('button', {
+                    type: 'button',
+                    className: 'sid-toolbox-card-btn',
+                    onClick: () => updPlugin(p),
+                  }, '更新（agent）') : null,
+                )),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '手动绑定 GitHub 仓库：'),
+            ),
+            Object.keys((updRepos && typeof updRepos === 'object') ? updRepos : {}).map((name) => React.createElement('div', { key: 'm-' + name, className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, name + ' → ' + updRepos[name]),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                onClick: () => saveRepo(name, ''),
+              }, '解除'),
+            )),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('input', {
+                className: 'sid-toolbox-input sid-toolbox-input-num',
+                type: 'text',
+                placeholder: '插件名（如 sidor-ui）',
+                value: addName,
+                onChange: (e) => setAddName(e.target.value),
+              }),
+              React.createElement('input', {
+                className: 'sid-toolbox-input',
+                type: 'text',
+                placeholder: 'GitHub 仓库（用户名/仓库名）',
+                value: addRepo,
+                onChange: (e) => setAddRepo(e.target.value),
+                onKeyDown: (e) => { if (e.key === 'Enter') addBinding() },
+              }),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                onClick: () => addBinding(),
+              }, '绑定'),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-upd-ghbase' }, 'GitHub API 镜像基址（默认 https://api.github.com，镜像填如 https://ghproxy.com 或自建，留空=官方）'),
+              React.createElement('input', {
+                id: 'sid-upd-ghbase',
+                className: 'sid-toolbox-input',
+                type: 'text',
+                placeholder: '留空使用官方 api.github.com',
+                value: updGhBase,
+                onChange: (e) => setUpdGhBase(e.target.value),
+                onBlur: () => saveGhBase(updGhBase),
+                onKeyDown: (e) => { if (e.key === 'Enter') saveGhBase(updGhBase) },
+              }),
+            ),
+          ),
+        ),
+      )
+    }
+
+    /* ============ styles ============ */
+    styles.insert(`
+/* ---- SIDOR 工具箱：设置页 ---- */
+.sid-toolbox-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 560px;
+}
+.sid-toolbox-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sid-toolbox-perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-toolbox-page-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.sid-toolbox-page-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-toolbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.sid-toolbox-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-l1, transparent);
+}
+.sid-toolbox-guard {
+  grid-column: 1 / -1;
+}
+.sid-toolbox-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sid-toolbox-card-ic {
+  display: inline-flex;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-toolbox-card-ic svg { width: 16px; height: 16px; }
+.sid-toolbox-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.sid-toolbox-card-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-toolbox-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+.sid-toolbox-card-row-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  min-width: 0;
+  word-break: break-all;
+}
+.sid-toolbox-card-btn {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sid-toolbox-card-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.sid-toolbox-input {
+  flex: 0 1 220px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-input-bg, var(--dsw-alias-bg-base));
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  outline: none;
+}
+.sid-toolbox-input:focus {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 25%, transparent);
+}
+.sid-toolbox-input-num { flex: 0 1 140px; text-align: right; }
+/* settings nav: 工具箱图标 */
+.sid-nav-toolbox {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-nav-toolbox svg { width: 16px; height: 16px; }
+
+/* ---- 右侧轨道 ---- */
+.sid-rail {
+  position: fixed;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.sid-rail-item {
+  pointer-events: auto;
+  display: flex;
+}
+.sid-rail-icon-box {
+  position: relative;
+  display: inline-flex;
+  outline: none;
+}
+.sid-rail-icon {
+  display: inline-flex;
+  color: var(--dsw-alias-label-secondary);
+  /* 常态白色呼吸辉光，与价格提示同频（9.2s） */
+  animation: sid-price-breathe 9.2s ease-in-out infinite;
+}
+.sid-rail-icon.warn {
+  color: var(--dsw-alias-state-error-primary, #e5534b);
+  /* 警示态红色呼吸辉光，与价格高峰同频（9.2s） */
+  animation: sid-price-breathe-red 9.2s ease-in-out infinite;
+}
+.sid-rail-icon svg { width: 22px; height: 22px; }
+
+/* ---- 四芒星 ---- */
+.sid-price-star-box {
+  position: relative;
+  display: inline-flex;
+  outline: none;
+}
+.sid-price-star {
+  display: inline-flex;
+  color: var(--dsw-alias-label-primary, #eee);
+  animation: sid-price-breathe 9.2s ease-in-out infinite;
+}
+.sid-price-star.peak {
+  color: var(--dsw-alias-state-error-primary, #e5534b);
+  animation: sid-price-breathe-red 9.2s ease-in-out infinite;
+}
+.sid-price-star-tw {
+  display: inline-flex;
+  animation: sid-price-twinkle 3s ease-in-out infinite;
+}
+.sid-price-star svg { width: 22px; height: 22px; }
+@keyframes sid-price-breathe {
+  0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--dsw-alias-label-primary, #eee) 26%, transparent)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 16px color-mix(in srgb, var(--dsw-alias-label-primary, #eee) 58%, transparent)); }
+}
+@keyframes sid-price-breathe-red {
+  0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--dsw-alias-state-error-primary, #e5534b) 30%, transparent)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--dsw-alias-state-error-primary, #e5534b) 85%, transparent)); }
+}
+@keyframes sid-price-twinkle {
+  0%, 100% { transform: scale(0.94); }
+  50% { transform: scale(1.05); }
+}
+
+/* ---- 官方浮层提示框 ---- */
+.sid-tooltip {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 12px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-overlay, #16181e));
+  border: 1px solid var(--dsw-alias-border-inverted, var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35)));
+  border-radius: 12px;
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.35));
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: sid-tooltip-in 0.16s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.sid-tooltip-title {
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+@keyframes sid-tooltip-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(6px); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* ---- 界面 toast ---- */
+.sid-notify-toast {
+  position: fixed;
+  right: 12px;
+  top: 16px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 8px 14px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-overlay, #16181e));
+  border: 1px solid var(--dsw-alias-border-inverted, var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35)));
+  border-radius: 12px;
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.35));
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  pointer-events: none;
+  animation: sid-notify-toast-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.sid-notify-toast-ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-notify-toast-ic svg { width: 16px; height: 16px; }
+@keyframes sid-notify-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- 横向滑动开关 ---- */
+.sid-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+.sid-toggle-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.4));
+  transition: background 0.16s ease;
+}
+.sid-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.16s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.sid-toggle.on .sid-toggle-track {
+  background: var(--dsw-alias-brand-primary);
+}
+.sid-toggle.on .sid-toggle-thumb {
+  transform: translateX(14px);
+}
+.sid-toggle:focus-visible .sid-toggle-track {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent);
+}
+
+/* ---- 防崩溃守护：二级确认备份弹窗（统一官方浮层风格） ---- */
+.sid-rail-action {
+  cursor: pointer;
+}
+.sid-guard-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 45%, transparent);
+  animation: sid-guard-overlay-in 0.18s ease;
+}
+.sid-guard-confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 48px));
+  padding: 16px 18px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-overlay, #16181e));
+  border: 1px solid var(--dsw-alias-border-inverted, var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35)));
+  border-radius: 12px;
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.35));
+  color: var(--dsw-alias-label-primary);
+  animation: sid-guard-card-in 0.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.sid-guard-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sid-guard-confirm-ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-guard-confirm-ic svg { width: 18px; height: 18px; }
+.sid-guard-confirm-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.sid-guard-confirm-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-secondary);
+}
+.sid-guard-confirm-path {
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-input-bg, var(--dsw-alias-bg-base));
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  word-break: break-all;
+}
+.sid-guard-confirm-status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-caption, var(--dsw-alias-label-secondary));
+}
+.sid-guard-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.sid-guard-confirm-primary {
+  background: var(--dsw-alias-brand-primary);
+  border-color: transparent;
+  color: #000;
+  font-weight: 600;
+}
+.sid-guard-confirm-primary:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 88%, #000);
+}
+.sid-guard-confirm-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+@keyframes sid-guard-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sid-guard-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+`)
+
+    /* ============ settings nav：官方齿轮 → 工具箱图标 ============ */
+    ctx.effect(() => {
+      const w = typeof window !== 'undefined' ? window : null
+      const doc = w && w.document ? w.document : null
+      const MO = w && w.MutationObserver ? w.MutationObserver : null
+      let rootMo = null
+      let tickIv = null
+      const fixNavIcon = () => {
+        if (!doc || !w) return
+        try {
+          const cells = doc.querySelectorAll('[class*="settingsArea"] [class*="_nav"] [class*="navCell"]')
+          for (const cell of Array.from(cells)) {
+            if (!(cell instanceof w.HTMLElement)) continue
+            const label = cell.querySelector('[class*="navLabel"]')
+            if (!label || (label.textContent || '').trim() !== '工具箱') continue
+            const svg = cell.querySelector('svg[class*="navIcon"], [class*="navIcon"]')
+            if (!svg) continue
+            if (cell.querySelector('.sid-nav-toolbox')) {
+              svg.style.display = 'none'
+              continue
+            }
+            const wrapper = doc.createElement('span')
+            wrapper.className = 'sid-nav-toolbox'
+            wrapper.setAttribute('aria-hidden', 'true')
+            wrapper.innerHTML = ICON_TOOLBOX
+            cell.insertBefore(wrapper, svg)
+            svg.style.display = 'none'
+          }
+        } catch (e) {
+          console.error('sidor-box: fixNavIcon failed', e)
+        }
+      }
+      try {
+        if (doc && MO) {
+          rootMo = new MO((muts) => {
+            let hit = false
+            for (const m of muts) {
+              const t = m.target
+              if (t && t.nodeType === 1 && typeof t.closest === 'function') {
+                if (t.closest('[class*="settingsArea"]')) { hit = true; break }
+              }
+            }
+            if (hit) fixNavIcon()
+          })
+          rootMo.observe(doc.body, { childList: true, subtree: true })
+        }
+      } catch (e) { /* body not ready yet */ }
+      tickIv = ctx.interval(fixNavIcon, 500)
+      return () => {
+        if (rootMo) rootMo.disconnect()
+        if (tickIv) tickIv()
+      }
+    })
+
+    /* ============ slot registrations ============ */
+    slots.inject('settings.section', () => slots.register(
+      { name: 'settings.section', id: 'sidor-box', order: 26, label: '工具箱' },
+      () => React.createElement(ToolboxSettingsPage),
+    ))
+  },
+}
