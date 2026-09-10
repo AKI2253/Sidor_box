@@ -1,6 +1,6 @@
 {
   "name": "sidor-box",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SIDOR 工具箱 —— DeepSeek Harness 独立附属插件：峰谷价格提示 / 任务完成通知 / 看门狗 / 审批提醒 / 防崩溃守护 / 插件与 DSH 版本检测。与主皮肤 sidor-ui 互相独立，官方插槽接入，可无冲突共存。",
   "keywords": [
     "deepseek-harness",

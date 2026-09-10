@@ -904,6 +904,184 @@ return {
     function railSubscribe(fn) { railListeners.add(fn); return () => railListeners.delete(fn) }
     function railRegisterModule(mod) { railModules.set(mod.id, mod); railNotify() }
 
+    /* ============ 右侧轨道避让：按「默认锚点上压着的真实元素」避让 ============ */
+    // 不猜形状：用浏览器的命中测试（elementsFromPoint）取锚点上真实压着的元素，
+    // 再按其形状避让——窄/靠边元素横向左移，横贯整宽元素纵向下移。
+    //
+    // 关键约束：取样点必须固定在【默认锚点】（right:12px / top:50% 时的中心），
+    // 与轨道当前位置无关。否则轨道一旦移开，该点就落到了主内容区上，
+    // 重排（滚轮滚动、列表虚拟化重建）使缓存目标失效后重新探查，就会把
+    // “已经躲开的遮挡物”误判成页面背景，把轨道甩到右下角并切掉底部。
+    const RAIL_ANCHOR_RIGHT = 12
+    const RAIL_EDGE = 12
+    const RAIL_ANCHOR_HALF_W = 11
+    let sidRailTarget = { el: null, mode: '' }
+    function sidRailEl() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return null
+      try { return w.document.querySelector('.sid-rail') } catch (e) { return null }
+    }
+    function sidRailReset() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return
+      const root = w.document.documentElement
+      root.style.removeProperty('--sid-rail-right')
+      root.style.removeProperty('--sid-rail-top')
+      root.style.removeProperty('--sid-rail-transform')
+    }
+    function sidRailOwn(el) {
+      const set = new Set()
+      let n = el
+      while (n) { set.add(n); n = n.parentElement }
+      return set
+    }
+    function sidRailAnchor() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w) return null
+      return {
+        x: Math.max(1, Math.round(w.innerWidth - RAIL_ANCHOR_RIGHT - RAIL_ANCHOR_HALF_W)),
+        y: Math.round(w.innerHeight / 2),
+      }
+    }
+    // 页面级容器（铺满视口 / 又宽又高的主体内容与滚动容器）不是“需要避开的 UI”，
+    // 轨道本就浮在正文之上，必须排除，否则会被判定为横贯整宽而触发纵向避让。
+    function sidRailIsPageBox(r) {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w) return false
+      const vw = w.innerWidth
+      const vh = w.innerHeight
+      if (r.width >= vw * 0.98 && r.height >= vh * 0.98) return true
+      if (r.width >= vw * 0.9 && r.height >= vh * 0.5) return true
+      return false
+    }
+    function sidRailStackAt(pt) {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document || !pt) return []
+      try { return Array.from(w.document.elementsFromPoint(pt.x, pt.y)) } catch (e) { return [] }
+    }
+    function sidRailDiscover(railEl) {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return null
+      const own = sidRailOwn(railEl)
+      for (const el of sidRailStackAt(sidRailAnchor())) {
+        if (!(el instanceof w.HTMLElement)) continue
+        if (own.has(el)) continue
+        let cls = ''
+        try { cls = String(el.className || '') } catch (e) { cls = '' }
+        if (cls.indexOf('sid-') !== -1) continue
+        const r = el.getBoundingClientRect()
+        if (r.width < 24 || r.height < 12) continue
+        if (sidRailIsPageBox(r)) continue
+        return { el: el, rect: r }
+      }
+      return null
+    }
+    function sidRailApply() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return
+      const root = w.document.documentElement
+      const vw = w.innerWidth
+      const vh = w.innerHeight
+      const railEl = sidRailEl()
+      if (!railEl) { sidRailTarget = { el: null, mode: '' }; sidRailReset(); return }
+      let railH = 0
+      try { railH = Math.round(railEl.getBoundingClientRect().height) } catch (e) { railH = 0 }
+      if (railH < 40) railH = 140
+      let t = sidRailTarget.el
+      let r = null
+      if (t && t.isConnected) {
+        try {
+          const rr = t.getBoundingClientRect()
+          if (rr.width > 8 && rr.height > 8) r = rr
+        } catch (e) { r = null }
+      }
+      if (!r) {
+        const found = sidRailDiscover(railEl)
+        if (!found) { sidRailTarget = { el: null, mode: '' }; sidRailReset(); return }
+        sidRailTarget = { el: found.el, mode: '' }
+        t = found.el
+        r = found.rect
+      }
+      if (r.width >= vw * 0.75) {
+        // 横贯整宽（横向条 / 表头）：纵向避让。必须用实测轨道高度，
+        // 否则 top = vh - 80 会把超高的轨道底部切出视口。
+        sidRailTarget.mode = 'below'
+        const maxTop = Math.max(16, vh - railH - 16)
+        const below = Math.round(r.bottom + 16)
+        const above = Math.round(r.top - railH - 16)
+        let top = below
+        if (below > maxTop) top = (above >= 16) ? above : Math.min(below, maxTop)
+        top = Math.max(16, Math.min(top, maxTop))
+        root.style.setProperty('--sid-rail-top', top + 'px')
+        root.style.setProperty('--sid-rail-transform', 'none')
+        root.style.removeProperty('--sid-rail-right')
+      } else {
+        // 靠边元素（竖排小横条 / 右侧栏）：横向避让，停在它左侧 12px
+        sidRailTarget.mode = 'left'
+        const cap = Math.max(12, Math.round(vw * 0.5))
+        const offset = Math.max(RAIL_EDGE, Math.min(Math.round(vw - r.left + RAIL_EDGE), cap))
+        root.style.setProperty('--sid-rail-right', offset + 'px')
+        root.style.removeProperty('--sid-rail-top')
+        root.style.removeProperty('--sid-rail-transform')
+      }
+    }
+    function sidRailProbe() {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return '无 window'
+      const root = w.document.documentElement
+      const railEl = sidRailEl()
+      const fmt = (el) => {
+        let cls = ''
+        try { cls = String(el.className || '').slice(0, 44) } catch (e) { cls = '?' }
+        const r = el.getBoundingClientRect()
+        return el.tagName + '.' + (cls || '(无类名)')
+          + '[left=' + Math.round(r.left) + ' top=' + Math.round(r.top)
+          + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ']'
+          + (sidRailIsPageBox(r) ? '[页面级-跳过]' : '')
+      }
+      const lines = []
+      lines.push('viewport ' + w.innerWidth + 'x' + w.innerHeight
+        + ' right=' + (root.style.getPropertyValue('--sid-rail-right') || '(默认' + RAIL_ANCHOR_RIGHT + 'px)')
+        + ' top=' + (root.style.getPropertyValue('--sid-rail-top') || '(默认50%)')
+        + ' mode=' + (sidRailTarget.mode || '(无目标)'))
+      if (!railEl) { lines.push('未找到 .sid-rail（可能所有功能已关闭）'); return lines.join(' ｜ ') }
+      const rr = railEl.getBoundingClientRect()
+      lines.push('轨道[left=' + Math.round(rr.left) + ' top=' + Math.round(rr.top)
+        + ' ' + Math.round(rr.width) + 'x' + Math.round(rr.height) + ']')
+      const t = sidRailTarget.el
+      if (t && t.isConnected) lines.push('当前目标 ' + fmt(t))
+      const pt = sidRailAnchor()
+      const items = sidRailStackAt(pt)
+        .slice(0, 8)
+        .map((el) => (el instanceof w.HTMLElement ? fmt(el) : String((el && el.tagName) || el)))
+      lines.push('默认锚点[' + pt.x + ',' + pt.y + ']叠层 ' + (items.length ? items.join(' ｜ ') : '(空)'))
+      return lines.join(' ｜ ')
+    }
+    ctx.effect(() => {
+      const iv = ctx.interval(sidRailApply, 1200)
+      sidRailApply()
+      const w = typeof window !== 'undefined' ? window : null
+      let lastAt = 0
+      const onLayout = () => {
+        const now = Date.now()
+        if (now - lastAt < 150) return
+        lastAt = now
+        sidRailApply()
+      }
+      if (w) {
+        w.addEventListener('resize', onLayout)
+        w.addEventListener('scroll', onLayout, true)
+      }
+      return () => {
+        iv()
+        if (w) {
+          w.removeEventListener('resize', onLayout)
+          w.removeEventListener('scroll', onLayout, true)
+        }
+        sidRailReset()
+      }
+    })
+
     /* ============ 横向滑动开关 ============ */
     function Toggle({ id, checked, onChange, label }) {
       return React.createElement('button', {
@@ -1251,6 +1429,7 @@ return {
       const [guardHistory, setGuardHistory] = React.useState([])
       const [guardBusy, setGuardBusy] = React.useState(false)
       const [guardHostOk, setGuardHostOk] = React.useState(sidGuard.hostOk)
+      const [probeText, setProbeText] = React.useState('')
       const [updEnabled, setUpdEnabled] = React.useState(sidUpd.enabled)
       const [updStatus, setUpdStatus] = React.useState(sidUpd.status)
       const [updBusy, setUpdBusy] = React.useState(false)
@@ -1574,6 +1753,17 @@ return {
               }, '检测 & 刷新'),
             ),
             React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '右侧结构探查（轨道避让诊断）'),
+              React.createElement('button', {
+                type: 'button',
+                className: 'sid-toolbox-card-btn',
+                onClick: () => { const t = sidRailProbe(); sidRailApply(); setProbeText(t) },
+              }, '探查右侧结构'),
+            ),
+            probeText !== '' ? React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, probeText),
+            ) : null,
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
               React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '历史备份（选择回退）：'),
             ),
             guardHistory.length === 0
@@ -1826,18 +2016,19 @@ return {
 }
 .sid-nav-toolbox svg { width: 16px; height: 16px; }
 
-/* ---- 右侧轨道 ---- */
+/* ---- 右侧轨道：位置由 CSS 变量驱动（横向 + 纵向避让，见 sidRailApply） ---- */
 .sid-rail {
   position: fixed;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: var(--sid-rail-right, 12px);
+  top: var(--sid-rail-top, 50%);
+  transform: var(--sid-rail-transform, translateY(-50%));
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   pointer-events: none;
+  transition: right 0.18s ease, top 0.18s ease;
 }
 .sid-rail-item {
   pointer-events: auto;
@@ -1928,7 +2119,7 @@ return {
 /* ---- 界面 toast ---- */
 .sid-notify-toast {
   position: fixed;
-  right: 12px;
+  right: var(--sid-rail-right, 12px);
   top: 16px;
   z-index: 40;
   display: flex;
