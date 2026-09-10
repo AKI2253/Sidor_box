@@ -6,7 +6,7 @@
 ![静态持久化](https://img.shields.io/badge/形态-静态持久化-7c6cf0?style=flat-square)
 ![MIT](https://img.shields.io/badge/许可-MIT-2ea44f?style=flat-square)
 
-![版本](https://img.shields.io/badge/版本-v1.0.1-4f86f7?style=flat-square)
+![版本](https://img.shields.io/badge/版本-v1.0.2-4f86f7?style=flat-square)
 ![依赖](https://img.shields.io/badge/依赖-无%20Host%20RPC-8b5cf6?style=flat-square)
 ![零 Token](https://img.shields.io/badge/零%20Token-客户端检测-22c55e?style=flat-square)
 
@@ -21,7 +21,7 @@ DeepSeek Harness Web GUI 的 SIDOR 工具箱（独立分发仓库）。
 与主皮肤 [Sidor_UI](../Sidor_UI) 是**互相独立的两个插件**——可单独安装，也可并存，
 互不干扰（官方插槽 `settings.section` 按 `order` 自动排序共存）。
 
-当前版本：**v1.0.1**（功能①–⑥完整，含右侧轨道自动避让）。
+当前版本：**v1.0.2**（功能①–⑥完整，含右侧轨道自动避让与 hero 页隐藏）。
 
 ## 效果预览
 
@@ -52,10 +52,16 @@ DeepSeek Harness Web GUI 的 SIDOR 工具箱（独立分发仓库）。
   自动排除插件自身节点，以及页面级容器（铺满视口、又宽又高的主体内容与滚动容器）。
 - **避让规则**：窄 / 靠边元素（竖排小横条、右侧栏）→ 轨道**横向左移**到其左侧 12px；
   横贯整宽元素（横向条、表头）→ 轨道**纵向下移**，下方空间不足则翻到其上方。
-- **稳定性**：取样点**固定为默认锚点**，与轨道当前位置无关；只有目标元素从 DOM 移除才复位。
+- **稳定性**：取样点**固定为默认锚点**，与轨道当前位置无关；发现失败连续 3 次才复位（迟滞）。
   因此滚动、重排（含列表虚拟化重建）都不会让轨道漂移或被切出视口。
+- **显隐**：**仅在对话内容中显示**。新对话创建界面（`ConversationRoot` 的
+  `data-phase="hero"`）自动隐藏，`settling` / `active` 显示；判定采用取值白名单
+  （输入框另有同名 `data-phase`，取值为 `plain`/`claimed`/`submitting`/`adjudicating`/`inert`，不相交）。
+- **切换时序**（避免 hero ↔ 对话 切换时"先出现再滑走"）：hero 期间**冻结**位置不复位；
+  回到对话时**先算位置再取消隐藏**（同一帧完成，不会以旧位置先画一帧）；
+  阶段变化时连发重算（60/160/320/620ms）并对目标挂载留 420ms 宽限。
 - **实现**：位置全部由 CSS 变量驱动（`--sid-rail-right` / `--sid-rail-top` / `--sid-rail-transform`），
-  1.2 秒轮询 + `resize` / `scroll` 节流重算。
+  1.2 秒轮询 + `resize` / `scroll` 节流重算 + `MutationObserver` 监听 `data-phase` 即时响应。
 - **诊断**：设置 → 工具箱 → 防崩溃守护 → **「探查右侧结构」**，输出轨道矩形、当前目标元素
   与默认锚点叠层清单（每层标注是否被判为页面级容器而跳过）。
 
@@ -136,6 +142,18 @@ Sidor_UI 按可扩展平台设计：官方插槽（Slot）的 list 型插槽天�
 持续在「设置页工具箱」分区内以卡片形式扩展。
 
 ## 更新记录
+
+### v1.0.2
+
+- 新增**新对话创建界面（hero）自动隐藏轨道**：读取 `ConversationRoot` 写在会话根上的
+  `data-phase`（`hero`/`settling`/`active`），`hero` 时隐藏，对话内容中显示；
+  判定用取值白名单，不会与输入框的同名 `data-phase` 冲突。
+- 修复 **hero ↔ 对话 切换时轨道位置移动**：hero 期间改为**冻结**避让位置（原逻辑在 hero 页
+  找不到遮挡物会复位成默认位），回到对话时**先算位置再取消隐藏**（同一帧，不会先以旧位置
+  画一帧再滑过去），发现失败连续 3 次才复位（迟滞），阶段变化时连发重算并留 420ms 挂载宽限。
+- 修复审批界面探测的锚点：原先写的 `[data-phase="conversation"]` 并不存在，一直静默退化成
+  扫描整个 document；改为锚定 `[data-phase="active"]`（退化 `settling`）。
+- 设置页「工具箱」说明与探查报告同步补充 `phase` / `railHidden` / `miss` 字段。
 
 ### v1.0.1
 
