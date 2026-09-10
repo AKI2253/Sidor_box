@@ -906,20 +906,38 @@ return {
     function railSubscribe(fn) { railListeners.add(fn); return () => railListeners.delete(fn) }
     function railRegisterModule(mod) { railModules.set(mod.id, mod); railNotify() }
 
-    /* ============ 轨道显隐：位置恒定，占位被压住时隐藏 ============ */
-    // 位置恒定在 right:12px / top:50%（静态版原位），代码里不再写入任何位置变量。
-    // 只判断「默认占位区是否被贴右缘的面板/侧边选择栏压住」：
-    //   压住（侧边栏展开）→ 整体隐藏图标；不再压住（侧边栏收起）→ 自动恢复。
-    // 判定只依赖视口与轨道自身尺寸，与显示状态无关 ⇒ 无自激回路、绝不抖动。
-    const RAIL_FOOTPRINT_RIGHT = 12
-    const RAIL_DOCK_SLACK = 24
-    const RAIL_BG_W_RATIO = 0.7
-    const RAIL_BG_H_RATIO = 0.5
-    const RAIL_CONFIRM = 2
-    let sidRailOccupied = false
-    let sidRailObstacle = null
-    let sidRailHitCount = 0
-    let sidRailFreeCount = 0
+    /* ============ 轨道：左侧锚定（平滑跟随 + 防抖） ============ */
+    // 位置 = 「左侧栏右缘 + 左距」，垂直居中；CSS 带 transition:left 使移动平滑。
+    // 防抖：探不到时保留上次结果（连续 6 次才回落贴左缘）；新位置需连续两拍一致才写入；
+    // 死区 4px；位置变更后连发重算（80/180/320/520ms），侧栏动画结束即落到最终位置。
+    // 宽度/位置/过渡均带 !important，并在代码里写内联样式，压过可能残留的旧版规则。
+    const RAIL_DEF_GAP = 12
+    const RAIL_SIDEBAR_MAX_W_RATIO = 0.28
+    const RAIL_SIDEBAR_MIN_H_RATIO = 0.5
+    const RAIL_DEAD_ZONE = 4
+    const RAIL_MISS_LIMIT = 6
+    const RAIL_CAP_LEFT = 900
+    let sidRailCfg = { gap: RAIL_DEF_GAP }
+    try {
+      const raw = window.localStorage.getItem('sidor.box.rail')
+      if (raw) {
+        const o = JSON.parse(raw)
+        if (o && typeof o === 'object' && Number.isFinite(o.gap)) sidRailCfg.gap = o.gap
+      }
+    } catch (e) { /* ignore */ }
+    if (!Number.isFinite(sidRailCfg.gap)) sidRailCfg.gap = RAIL_DEF_GAP
+    function sidRailSave() {
+      try { window.localStorage.setItem('sidor.box.rail', JSON.stringify(sidRailCfg)) } catch (e) { /* ignore */ }
+    }
+    const sidRail = { left: null, sideTag: '', sideW: 0, sideEdge: 0, found: false, miss: 0, pending: null, pendingCount: 0 }
+    const sidRailListeners = new Set()
+    function sidRailNotify() { for (const fn of Array.from(sidRailListeners)) { try { fn() } catch (e) { /* ignore */ } } }
+    function sidRailSubscribe(fn) { sidRailListeners.add(fn); return () => sidRailListeners.delete(fn) }
+    function sidRailClampGap(v) {
+      const n = Math.round(Number(v))
+      if (!Number.isFinite(n)) return RAIL_DEF_GAP
+      return Math.max(0, Math.min(240, n))
+    }
     function sidRailEl() {
       const w = typeof window !== 'undefined' ? window : null
       if (!w || !w.document) return null
@@ -931,63 +949,17 @@ return {
       while (n) { set.add(n); n = n.parentElement }
       return set
     }
-    // 轨道默认占位矩形（right:12px / top:50%）：只依赖视口与轨道自身尺寸
-    function sidRailBox() {
-      const w = typeof window !== 'undefined' ? window : null
-      if (!w) return null
-      const vw = w.innerWidth
-      const vh = w.innerHeight
-      let rw = 22
-      let rh = 0
-      const el = sidRailEl()
-      if (el) {
-        try {
-          const rr = el.getBoundingClientRect()
-          if (rr.width > 4) rw = Math.round(rr.width)
-          rh = Math.round(rr.height)
-        } catch (e) { /* ignore */ }
-      }
-      if (!rh) rh = 150
-      rh = Math.max(60, Math.min(rh, Math.round(vh * 0.8)))
-      const left = vw - RAIL_FOOTPRINT_RIGHT - rw
-      const centerY = Math.round(vh / 2)
-      const half = Math.max(20, Math.round(rh / 2))
-      return { vw: vw, vh: vh, w: rw, h: rh, left: left, right: left + rw, top: centerY - half, bottom: centerY + half, centerY: centerY }
-    }
-    function sidRailPoints() {
-      const box = sidRailBox()
-      if (!box) return []
-      const xs = [box.left + 2, Math.round((box.left + box.right) / 2), box.right - 2]
-      const ys = [box.top + 2, box.centerY, box.bottom - 2]
-      const pts = []
-      for (const x of xs) {
-        for (const y of ys) {
-          pts.push({
-            x: Math.max(1, Math.min(box.vw - 1, x)),
-            y: Math.max(2, Math.min(box.vh - 2, y)),
-          })
-        }
-      }
-      return pts
+    function sidRailTagOf(el) {
+      if (!el) return ''
+      try { return el.tagName + '.' + String(el.className || '').split(' ')[0].slice(0, 28) } catch (e) { return '' }
     }
     function sidRailStackAt(pt) {
       const w = typeof window !== 'undefined' ? window : null
       if (!w || !w.document || !pt) return []
       try { return Array.from(w.document.elementsFromPoint(pt.x, pt.y)) } catch (e) { return [] }
     }
-    // 「整块背景」：铺满视口，或又宽又高的主体内容/中心列（轨道本就浮在其上）
-    function sidRailIsBackground(r) {
-      const w = typeof window !== 'undefined' ? window : null
-      if (!w) return false
-      const vw = w.innerWidth
-      const vh = w.innerHeight
-      if (r.width >= vw * 0.98 && r.height >= vh * 0.98) return true
-      if (r.width >= vw * 0.9 && r.height >= vh * 0.5) return true
-      if (r.width >= vw * RAIL_BG_W_RATIO && r.height >= vh * RAIL_BG_H_RATIO) return true
-      return false
-    }
     /* 会话阶段：ConversationRoot 在会话根 div 上写 data-phase（hero/settling/active）。
-       hero = 未选中会话的「新对话创建界面」→ 隐藏；settling/active = 对话内容 → 显示。
+       hero = 未选中会话的「新对话创建界面」→ 隐藏轨道；settling/active = 对话内容 → 显示。
        输入框另有同名 data-phase，取值 plain/claimed/submitting/adjudicating/inert，
        与上述三值不相交，故按取值白名单判定即可避免误伤。 */
     function sidRailPhase() {
@@ -1002,26 +974,61 @@ return {
       } catch (e) { /* ignore */ }
       return ''
     }
-    // 占位区内是否被「贴右缘的非背景元素」压住（= 右侧面板 / 侧边选择栏已展开）
-    function sidRailObstacleAt(own) {
+    // 探测左侧栏：贴左缘（x=4）多个高度命中，取「左缘<=4、高>=50%vh、宽<=28%vw」最宽者。
+    // 上限定窄是有意的：过宽会把「左侧栏 + 部分工作区」的外层包装容器误认为侧栏。
+    function sidRailLeftSidebar() {
       const w = typeof window !== 'undefined' ? window : null
       if (!w || !w.document) return null
       const vw = w.innerWidth
-      for (const pt of sidRailPoints()) {
+      const vh = w.innerHeight
+      const maxW = vw * RAIL_SIDEBAR_MAX_W_RATIO
+      const minH = vh * RAIL_SIDEBAR_MIN_H_RATIO
+      const own = sidRailOwn(sidRailEl())
+      let best = null
+      const seen = new Set()
+      for (const ratio of [0.06, 0.25, 0.5, 0.75, 0.94]) {
+        const pt = { x: 4, y: Math.max(2, Math.min(vh - 2, Math.round(vh * ratio))) }
         for (const el of sidRailStackAt(pt)) {
           if (!(el instanceof w.HTMLElement)) continue
-          if (own.has(el)) continue
+          if (own.has(el) || seen.has(el)) continue
+          seen.add(el)
           let cls = ''
           try { cls = String(el.className || '') } catch (e) { cls = '' }
           if (cls.indexOf('sid-') !== -1) continue
           const r = el.getBoundingClientRect()
-          if (r.width < 8 || r.height < 8) continue
-          if (r.right < vw - RAIL_DOCK_SLACK) continue
-          if (sidRailIsBackground(r)) continue
-          return el
+          if (r.left > 4) continue
+          if (r.height < minH) continue
+          if (r.width < 24 || r.width > maxW) continue
+          if (!best || r.width > best.rect.width) best = { el: el, rect: r }
         }
       }
-      return null
+      return best
+    }
+    // 写位置：CSS 变量 + 元素内联样式（后者压过任何残留样式表）
+    function sidRailApplyLeft(left) {
+      const w = typeof window !== 'undefined' ? window : null
+      if (!w || !w.document) return
+      w.document.documentElement.style.setProperty('--sid-rail-left', left + 'px')
+      const el = sidRailEl()
+      if (el) {
+        el.style.right = 'auto'
+        el.style.width = 'max-content'
+        el.style.position = 'fixed'
+      }
+    }
+    let sidRailBurstAt = 0
+    const sidRailBurstTimers = []
+    function sidRailBurst() {
+      const now = Date.now()
+      if (now - sidRailBurstAt < 300) return
+      sidRailBurstAt = now
+      for (const d of [80, 180, 320, 520]) sidRailBurstTimers.push(ctx.timeout(() => sidRailTick(false), d))
+    }
+    function sidRailSetGap(v) {
+      sidRailCfg.gap = sidRailClampGap(v)
+      sidRailSave()
+      sidRailTick(true)
+      sidRailNotify()
     }
     function sidRailSetHidden(on) {
       const w = typeof window !== 'undefined' ? window : null
@@ -1030,104 +1037,117 @@ return {
       if (on) root.classList.add('sid-rail-hidden')
       else root.classList.remove('sid-rail-hidden')
     }
-    function sidRailTick() {
+    // force=true 时忽略死区与两拍确认，立即写入（改设置后用）
+    function sidRailTick(force) {
       const w = typeof window !== 'undefined' ? window : null
       if (!w || !w.document) return
       if (sidRailPhase() === 'hero') {
-        sidRailHitCount = 0
-        sidRailFreeCount = 0
-        sidRailObstacle = null
-        sidRailOccupied = false
         sidRailSetHidden(true)
         return
       }
-      const railEl = sidRailEl()
-      let hit = null
-      if (railEl) hit = sidRailObstacleAt(sidRailOwn(railEl))
-      // 双向各 2 拍确认：避免侧边栏展开/收起动画期间的瞬时命中导致显隐闪烁
-      if (hit) {
-        sidRailFreeCount = 0
-        sidRailHitCount += 1
-        if (sidRailHitCount >= RAIL_CONFIRM) {
-          sidRailObstacle = hit
-          sidRailOccupied = true
+      const side = sidRailLeftSidebar()
+      let edge
+      if (side) {
+        sidRail.miss = 0
+        sidRail.found = true
+        sidRail.sideTag = sidRailTagOf(side.el)
+        sidRail.sideW = Math.round(side.rect.width)
+        edge = Math.round(side.rect.left + side.rect.width)
+      } else {
+        // 探不到时保留上次结果，避免在 left 与贴左缘之间来回跳
+        sidRail.miss += 1
+        sidRail.found = false
+        edge = sidRail.miss >= RAIL_MISS_LIMIT ? 0 : (sidRail.sideEdge || 0)
+      }
+      sidRail.sideEdge = edge
+      const left = Math.max(0, Math.min(RAIL_CAP_LEFT, edge + sidRailCfg.gap))
+      if (force || sidRail.left === null) {
+        sidRail.left = left
+        sidRail.pending = null
+        sidRail.pendingCount = 0
+        sidRailApplyLeft(left)
+      } else if (Math.abs(left - sidRail.left) > RAIL_DEAD_ZONE) {
+        if (sidRail.pending === left) sidRail.pendingCount += 1
+        else { sidRail.pending = left; sidRail.pendingCount = 1 }
+        if (sidRail.pendingCount >= 2) {
+          sidRail.left = left
+          sidRail.pending = null
+          sidRail.pendingCount = 0
+          sidRailApplyLeft(left)
+          sidRailBurst()
         }
       } else {
-        sidRailHitCount = 0
-        sidRailFreeCount += 1
-        if (sidRailFreeCount >= RAIL_CONFIRM) {
-          sidRailObstacle = null
-          sidRailOccupied = false
-        }
+        sidRail.pending = null
+        sidRail.pendingCount = 0
       }
-      sidRailSetHidden(sidRailOccupied)
+      sidRailSetHidden(false)
+      sidRailNotify()
+    }
+    function sidRailResetCfg() {
+      sidRailCfg.gap = RAIL_DEF_GAP
+      sidRailSave()
+      sidRailTick(true)
+      sidRailNotify()
+      sidToastShow('已恢复默认：左距 ' + RAIL_DEF_GAP + 'px（相对左侧栏右缘）')
     }
     function sidRailFmt(el) {
-      const w = typeof window !== 'undefined' ? window : null
       let cls = ''
       try { cls = String(el.className || '').slice(0, 40) } catch (e) { cls = '?' }
       const r = el.getBoundingClientRect()
-      return el.tagName + '.' + (cls || '(无类名)') + '[left=' + Math.round(r.left) + ' top=' + Math.round(r.top)
-        + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ']'
-        + (w && sidRailIsBackground(r) ? '[背景-跳过]' : '')
-        + (w && r.right >= w.innerWidth - RAIL_DOCK_SLACK ? '[贴右缘]' : '')
+      return el.tagName + '.' + (cls || '(无类名)') + '[left=' + Math.round(r.left) + ' top=' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ']'
     }
     function sidRailProbe() {
       const w = typeof window !== 'undefined' ? window : null
       if (!w || !w.document) return '无 window'
       const root = w.document.documentElement
       const railEl = sidRailEl()
-      const box = sidRailBox()
+      const rails = w.document.querySelectorAll('.sid-rail')
       const lines = []
-      const phase = sidRailPhase()
       lines.push('viewport ' + w.innerWidth + 'x' + w.innerHeight
-        + ' 占位=' + (box ? ('x' + box.left + '~' + box.right + ' y' + box.top + '~' + box.bottom) : '?')
-        + ' phase=' + (phase || '(无会话根)')
-        + ' occupied=' + (sidRailOccupied ? '是-已隐藏' : '否-显示中')
-        + ' hit=' + sidRailHitCount + ' free=' + sidRailFreeCount
-        + ' railHidden=' + (root.classList.contains('sid-rail-hidden') ? '是' : '否'))
+        + ' 左距=' + sidRailCfg.gap + ' 宽度上限=' + Math.round(w.innerWidth * RAIL_SIDEBAR_MAX_W_RATIO) + 'px'
+        + ' phase=' + (sidRailPhase() || '(无会话根)')
+        + ' railHidden=' + (root.classList.contains('sid-rail-hidden') ? '是' : '否')
+        + ' 生效 left=' + (sidRail.left === null ? '(未写入)' : sidRail.left + 'px')
+        + ' 侧栏右缘=' + sidRail.sideEdge + ' miss=' + sidRail.miss
+        + ' pending=' + (sidRail.pending === null ? '无' : (sidRail.pending + 'px×' + sidRail.pendingCount))
+        + ' 页面 .sid-rail 个数=' + rails.length)
       if (railEl) {
         const rr = railEl.getBoundingClientRect()
-        lines.push('轨道[left=' + Math.round(rr.left) + ' top=' + Math.round(rr.top) + ' ' + Math.round(rr.width) + 'x' + Math.round(rr.height) + ']')
+        const cs = w.getComputedStyle(railEl)
+        lines.push('轨道[left=' + Math.round(rr.left) + ' top=' + Math.round(rr.top) + ' ' + Math.round(rr.width) + 'x' + Math.round(rr.height) + ']'
+          + ' 计算样式[left=' + cs.left + ' right=' + cs.right + ' width=' + cs.width + ' transition=' + cs.transition + ']')
       } else {
         lines.push('未找到 .sid-rail（可能所有功能已关闭）')
       }
-      const hit = sidRailObstacle ? sidRailObstacle : (railEl ? sidRailObstacleAt(sidRailOwn(railEl)) : null)
-      lines.push('遮挡判定: ' + (hit ? sidRailFmt(hit) : '(无，占位空闲)'))
-      if (box) {
-        const bp = { x: Math.max(1, box.left + 2), y: box.centerY }
-        const raw = sidRailStackAt(bp).slice(0, 10).map((el) => (el instanceof w.HTMLElement ? sidRailFmt(el) : String((el && el.tagName) || el)))
-        lines.push('占位左缘叠层[' + bp.x + ',' + bp.y + ']: ' + (raw.length ? raw.join(' ｜ ') : '(空)'))
-        const cp = { x: Math.max(1, box.right - 4), y: box.centerY }
-        const raw2 = sidRailStackAt(cp).slice(0, 8).map((el) => (el instanceof w.HTMLElement ? sidRailFmt(el) : String((el && el.tagName) || el)))
-        lines.push('占位右缘叠层[' + cp.x + ',' + cp.y + ']: ' + (raw2.length ? raw2.join(' ｜ ') : '(空)'))
+      const side = sidRailLeftSidebar()
+      lines.push('左侧栏: ' + (side ? (sidRailFmt(side.el) + ' → 右缘 ' + Math.round(side.rect.left + side.rect.width)) : '(本次未识别)'))
+      const vh = w.innerHeight
+      const rows = []
+      for (const ratio of [0.06, 0.5, 0.94]) {
+        const pt = { x: 4, y: Math.max(2, Math.min(vh - 2, Math.round(vh * ratio))) }
+        const items = sidRailStackAt(pt).slice(0, 6).map((el) => (el instanceof w.HTMLElement ? sidRailFmt(el) : String((el && el.tagName) || el)))
+        rows.push('x4,y' + pt.y + ': ' + (items.length ? items.join(' ｜ ') : '(空)'))
       }
+      lines.push('左缘叠层 ' + rows.join(' ｜ '))
       return lines.join(' ｜ ')
     }
     ctx.effect(() => {
-      const iv = ctx.interval(sidRailTick, 1200)
-      sidRailTick()
       const w = typeof window !== 'undefined' ? window : null
+      const iv = ctx.interval(() => sidRailTick(false), 900)
+      sidRailTick(true)
       let last = 0
       const onLayout = () => {
         const now = Date.now()
-        if (now - last < 150) return
+        if (now - last < 120) return
         last = now
-        sidRailTick()
+        sidRailTick(false)
       }
       let mo = null
       const MO = w && w.MutationObserver ? w.MutationObserver : null
       try {
         if (w && w.document && w.document.body && MO) {
-          mo = new MO((muts) => {
-            let hit = false
-            for (const m of muts) {
-              if (m.type === 'attributes' && m.attributeName === 'data-phase') { hit = true; break }
-              if (m.type === 'childList') { hit = true; break }
-            }
-            if (hit) sidRailTick()
-          })
-          mo.observe(w.document.body, { childList: true, attributes: true, subtree: true, attributeFilter: ['data-phase'] })
+          mo = new MO(() => sidRailTick(false))
+          mo.observe(w.document.body, { childList: true, attributes: true, subtree: true, attributeFilter: ['data-phase', 'style', 'class'] })
         }
       } catch (e) { /* body 尚未就绪，后续轮询会兑上 */ }
       if (w) {
@@ -1137,11 +1157,19 @@ return {
       return () => {
         iv()
         if (mo) mo.disconnect()
+        for (const d of sidRailBurstTimers) { try { d() } catch (e) { /* ignore */ } }
         if (w) {
           w.removeEventListener('resize', onLayout)
           w.removeEventListener('scroll', onLayout, true)
         }
         sidRailSetHidden(false)
+        w.document.documentElement.style.removeProperty('--sid-rail-left')
+        const el = sidRailEl()
+        if (el) {
+          el.style.removeProperty('right')
+          el.style.removeProperty('width')
+          el.style.removeProperty('position')
+        }
       }
     })
 
@@ -1493,6 +1521,8 @@ return {
       const [guardBusy, setGuardBusy] = React.useState(false)
       const [guardHostOk, setGuardHostOk] = React.useState(sidGuard.hostOk)
       const [probeText, setProbeText] = React.useState('')
+      const [railGap, setRailGap] = React.useState(String(sidRailCfg.gap))
+      const [railSt, setRailSt] = React.useState({ left: sidRail.left, tag: sidRail.sideTag, w: sidRail.sideW, edge: sidRail.sideEdge })
       const [updEnabled, setUpdEnabled] = React.useState(sidUpd.enabled)
       const [updStatus, setUpdStatus] = React.useState(sidUpd.status)
       const [updBusy, setUpdBusy] = React.useState(false)
@@ -1537,9 +1567,13 @@ return {
           setUpdGhBase(sidUpd.ghBase)
           setUpdAuto(sidUpd.autoUpdate)
         })
+        const u7 = sidRailSubscribe(() => {
+          setRailGap(String(sidRailCfg.gap))
+          setRailSt({ left: sidRail.left, tag: sidRail.sideTag, w: sidRail.sideW, edge: sidRail.sideEdge })
+        })
         // 进入设置-工具箱页面时自动触发一次版本检查（静态形态下仅显示引导，不向 agent 发消息）
         if (sidUpd.enabled && !sidUpd.busy && !sidUpd.checked) sidUpdCheck(false)
-        return () => { u1(); u2(); u3(); u4(); u5(); u6() }
+        return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7() }
       }, [])
       const permText = notifyPerm === 'granted'
         ? '系统通知已授权'
@@ -1565,6 +1599,11 @@ return {
       const agentRollback = (id) => {
         sidPromptAgent('【SIDOR 防崩溃守护】请执行回退。' + sidGuardAgentPathHint() + ' 然后：找到备份快照 ' + id + '（存档文件夹 ' + (sidGuardCfg.archivePath || '<存档目录>') + '），将其中 cordis.patch.yml 等配置文件复制回 profile 覆盖，必要时运行 restore.cmd；完成后汇报。')
         sidToastShow('已向 agent 发送回退指令')
+      }
+      const runProbe = () => {
+        const t = sidRailProbe()
+        sidRailTick(false)
+        setProbeText(t)
       }
       const updRun = () => { sidUpdCheck(true) }
       const saveRepo = (name, v) => {
@@ -1614,8 +1653,41 @@ return {
           ),
         ),
         React.createElement('p', { className: 'sid-toolbox-page-desc' },
-          'SIDOR 工具箱：常用工具与快捷功能的集合页。开启的功能会在工作区右侧轨道显示对应图标（位置固定，新对话创建界面与右侧面板展开时自动隐藏）。'),
+          'SIDOR 工具箱：常用工具与快捷功能的集合页。开启的功能会在左侧侧栏与工作区之间显示轨道图标（新对话创建界面自动隐藏）。'),
         React.createElement('div', { className: 'sid-toolbox-grid' },
+          React.createElement('div', { className: 'sid-toolbox-card sid-toolbox-guard' },
+            React.createElement('div', { className: 'sid-toolbox-card-head' },
+              React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_TOOLBOX } }),
+              React.createElement('span', { className: 'sid-toolbox-card-title' }, '轨道位置（左侧锚定）'),
+            ),
+            React.createElement('p', { className: 'sid-toolbox-card-desc' },
+              '轨道固定在「左侧侧栏右缘 + 左距」处（垂直居中），随左侧栏展宽 / 收缩而平滑移动；探不到侧栏时保留上次结果，新位置需连续两拍一致才生效，因此不会闪烁。'),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' },
+                (railSt.tag ? ('左侧栏：' + railSt.tag + '（宽 ' + railSt.w + 'px，右缘 ' + railSt.edge + '）') : '左侧栏：本次未识别（沿用上次右缘 ' + railSt.edge + '）')
+                + '；当前 left=' + (railSt.left === null ? '-' : railSt.left + 'px')),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('label', { className: 'sid-toolbox-card-row-label', htmlFor: 'sid-rail-gap' }, '左距（px，相对左侧栏右缘）'),
+              React.createElement('input', {
+                id: 'sid-rail-gap',
+                className: 'sid-toolbox-input sid-toolbox-input-num',
+                type: 'number',
+                min: '0',
+                value: railGap,
+                onChange: (e) => setRailGap(e.target.value),
+                onBlur: () => sidRailSetGap(railGap),
+                onKeyDown: (e) => { if (e.key === 'Enter') sidRailSetGap(railGap) },
+              }),
+            ),
+            React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('button', { type: 'button', className: 'sid-toolbox-card-btn', onClick: () => runProbe() }, '探查左侧结构'),
+              React.createElement('button', { type: 'button', className: 'sid-toolbox-card-btn', onClick: () => sidRailResetCfg() }, '恢复默认'),
+            ),
+            probeText !== '' ? React.createElement('div', { className: 'sid-toolbox-card-row' },
+              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, probeText),
+            ) : null,
+          ),
           React.createElement('div', { className: 'sid-toolbox-card' },
             React.createElement('div', { className: 'sid-toolbox-card-head' },
               React.createElement('span', { className: 'sid-toolbox-card-ic', 'aria-hidden': true, dangerouslySetInnerHTML: { __html: ICON_PRICE_STAR } }),
@@ -1815,17 +1887,6 @@ return {
                 onClick: () => { sidGuardCheck(); sidGuardHistory() },
               }, '检测 & 刷新'),
             ),
-            React.createElement('div', { className: 'sid-toolbox-card-row' },
-              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '右侧结构探查（轨道避让诊断）'),
-              React.createElement('button', {
-                type: 'button',
-                className: 'sid-toolbox-card-btn',
-                onClick: () => { const t = sidRailProbe(); sidRailApply(); setProbeText(t) },
-              }, '探查右侧结构'),
-            ),
-            probeText !== '' ? React.createElement('div', { className: 'sid-toolbox-card-row' },
-              React.createElement('span', { className: 'sid-toolbox-card-row-label' }, probeText),
-            ) : null,
             React.createElement('div', { className: 'sid-toolbox-card-row' },
               React.createElement('span', { className: 'sid-toolbox-card-row-label' }, '历史备份（选择回退）：'),
             ),
@@ -2079,21 +2140,23 @@ return {
 }
 .sid-nav-toolbox svg { width: 16px; height: 16px; }
 
-/* ---- 右侧轨道：位置恒定（right:12px / top:50%），占位被压住时整体隐藏（见 sidRailTick） ---- */
+/* ---- 轨道：左侧锚定（left 随左侧栏宽度变化，平滑过渡；见 sidRailTick） ---- */
 .sid-rail {
-  position: fixed;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  position: fixed !important;
+  left: var(--sid-rail-left, 12px) !important;
+  right: auto !important;
+  top: 50% !important;
+  width: max-content !important;
+  transform: translateY(-50%) !important;
+  transition: left 0.24s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.18s ease !important;
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   pointer-events: none;
-  transition: opacity 0.18s ease;
 }
-/* 隐藏：新对话创建界面（hero），或右侧面板/侧边选择栏展开压住占位时 */
+/* 隐藏：仅用于新对话创建界面（hero） */
 html.sid-rail-hidden .sid-rail {
   opacity: 0;
   visibility: hidden;
@@ -2154,16 +2217,19 @@ html.sid-rail-hidden .sid-rail {
   50% { transform: scale(1.05); }
 }
 
-/* ---- 官方浮层提示框 ---- */
+/* ---- 官方浮层提示框（轨道在左侧，故气泡开在图标右侧；框体贴合内容并允许换行） ---- */
 .sid-tooltip {
   position: absolute;
-  right: calc(100% + 10px);
+  left: calc(100% + 10px);
   top: 50%;
   transform: translateY(-50%);
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  align-items: flex-start;
+  gap: 2px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
   padding: 8px 12px;
   background: var(--dsw-specific-menu, var(--dsw-alias-bg-overlay, #16181e));
   border: 1px solid var(--dsw-alias-border-inverted, var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.35)));
@@ -2172,23 +2238,25 @@ html.sid-rail-hidden .sid-rail {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 20px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
   pointer-events: none;
   animation: sid-tooltip-in 0.16s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .sid-tooltip-title {
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
 }
 @keyframes sid-tooltip-in {
-  from { opacity: 0; transform: translateY(-50%) translateX(6px); }
+  from { opacity: 0; transform: translateY(-50%) translateX(-6px); }
   to { opacity: 1; transform: translateY(-50%) translateX(0); }
 }
 
-/* ---- 界面 toast ---- */
+/* ---- 界面 toast（与轨道同侧对齐） ---- */
 .sid-notify-toast {
   position: fixed;
-  right: 12px;
+  left: var(--sid-rail-left, 12px);
   top: 16px;
   z-index: 40;
   display: flex;
