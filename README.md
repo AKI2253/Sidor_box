@@ -6,7 +6,7 @@
 ![静态持久化](https://img.shields.io/badge/形态-静态持久化-7c6cf0?style=flat-square)
 ![MIT](https://img.shields.io/badge/许可-MIT-2ea44f?style=flat-square)
 
-![版本](https://img.shields.io/badge/版本-v1.0.4-4f86f7?style=flat-square)
+![版本](https://img.shields.io/badge/版本-v1.0.6-4f86f7?style=flat-square)
 ![依赖](https://img.shields.io/badge/依赖-无%20Host%20RPC-8b5cf6?style=flat-square)
 ![零 Token](https://img.shields.io/badge/零%20Token-客户端检测-22c55e?style=flat-square)
 
@@ -21,7 +21,8 @@ DeepSeek Harness Web GUI 的 SIDOR 工具箱（独立分发仓库）。
 与主皮肤 [Sidor_UI](../Sidor_UI) 是**互相独立的两个插件**——可单独安装，也可并存，
 互不干扰（官方插槽 `settings.section` 按 `order` 自动排序共存）。
 
-当前版本：**v1.0.4**（功能①–⑥完整；轨道左侧锚定，随左侧栏平滑跟随）。
+当前版本：**v1.0.6**（功能①–⑥完整；轨道左侧锚定，随左侧栏平滑跟随；
+新增 DSH 0.2.0 网关适配：斜杠式 `/api/session/prompt` + `args` 信封 + `requestId`，保留旧版点号端点回退）。
 
 ## 效果预览
 
