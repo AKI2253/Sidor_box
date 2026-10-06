@@ -1459,7 +1459,9 @@ return {
       try { window.localStorage.setItem('sidor.box.notifiedSeq', JSON.stringify(sidNotifiedSeq)) } catch (e) { /* ignore */ }
     }
     function TurnTailWatcher(props) {
-      const seq = props.matched && props.matched.seq
+      // 0.2.0 的 turnTail 认领数据直接作为 owner props 下发（TurnTailOwnerProps:
+      // { turn, seq, openFile }）；旧的 select 映射已不再支持。
+      const seq = props.seq
       React.useEffect(() => {
         if (typeof seq !== 'number') return
         const sessionId = props.sessionId || ''
@@ -1478,7 +1480,9 @@ return {
       return null
     }
     slots.inject('conversation.chat.turnTail', () => slots.register(
-      { name: 'conversation.chat.turnTail', select: (owner) => ({ seq: owner.seq }) },
+      // 0.2.0 起 list 插槽必须声明 options.id（缺失会在注册时抛
+      // 'list slot ... requires options.id'）。
+      { name: 'conversation.chat.turnTail', id: 'sidor-turn-tail', order: 50, label: '任务完成检测' },
       (props) => React.createElement(TurnTailWatcher, props),
     ))
 
